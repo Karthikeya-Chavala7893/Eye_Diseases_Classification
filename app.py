@@ -1,5 +1,6 @@
 """VisionAI Eye Hospital - AI-Powered Retinal Screening Backend"""
 
+import io
 import logging
 import os
 import uuid
@@ -14,7 +15,6 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import torch
@@ -30,7 +30,6 @@ from supabase import create_client, Client
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', '')
     LOCAL_MODEL_ID = 'NeuronZero/EyeDiseaseClassifier'
-    UPLOAD_FOLDER = 'uploads'
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'webp'}
     GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
@@ -143,7 +142,7 @@ google = oauth.register(
     client_kwargs={'scope': 'openid email profile'}
 ) if Config.GOOGLE_CLIENT_ID else None
 
-os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
+
 
 supabase: Client = create_client(Config.SUPABASE_URL, Config.SUPABASE_KEY)
 print(f"✅ Supabase client initialized: {Config.SUPABASE_URL}")
@@ -368,13 +367,12 @@ def predict():
     if ext not in Config.ALLOWED_EXTENSIONS:
         return jsonify({'success': False, 'error': f'Invalid format. Use: {", ".join(Config.ALLOWED_EXTENSIONS)}'}), 400
 
-    saved_path = None
     try:
-        filename = secure_filename(file.filename)
-        saved_path = os.path.join(Config.UPLOAD_FOLDER, filename)
-        file.save(saved_path)
+        # Process image entirely in memory — no disk I/O, no file collisions
+        image_bytes = file.read()
+        image_stream = io.BytesIO(image_bytes)
+        image = Image.open(image_stream).convert('RGB')
 
-        image = Image.open(saved_path).convert('RGB')
         inputs = image_processor(images=image, return_tensors='pt')
         with torch.no_grad():
             outputs = eye_model(**inputs)
@@ -395,10 +393,6 @@ def predict():
     except Exception:
         logger.exception("Prediction inference error for user %s", current_user.email)
         return jsonify({'success': False, 'error': 'An error occurred while processing the image. Please try again.'}), 500
-    finally:
-        if saved_path and os.path.exists(saved_path):
-            try: os.remove(saved_path)
-            except OSError: pass
 
 @app.route('/health')
 @limiter.exempt

@@ -182,24 +182,12 @@
 {% endblock %}
 
 {% block scripts %}
-    <!-- Scripts -->
+    <!-- jsPDF (required by report.js) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
-    <script>
-        // User dropdown toggle
-        const userBtn = document.getElementById('userBtn');
-        const userDropdown = document.getElementById('userDropdown');
-
-        userBtn?.addEventListener('click', () => {
-            userDropdown.classList.toggle('show');
-        });
-
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.user-menu')) {
-                userDropdown?.classList.remove('show');
-            }
-        });
-    </script>
+    <!-- Screening-specific modules (app.js already loaded by base.html) -->
+    <script src="{{ url_for('static', filename='js/diseases.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/screening.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/report.js') }}"></script>
 {% endblock %}
 
 {% block extra_styles %}

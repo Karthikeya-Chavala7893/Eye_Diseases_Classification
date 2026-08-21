@@ -480,10 +480,8 @@
 {% endblock %}
 
 {% block scripts %}
-    <!-- Scripts -->
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
     <script>
-        // User dropdown toggle
+        // User dropdown toggle (index page only)
         const userBtn = document.getElementById('userBtn');
         const userDropdown = document.getElementById('userDropdown');
 

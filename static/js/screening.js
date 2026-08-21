@@ -128,6 +128,13 @@ async function analyze() {
         }
 
         const data = await res.json();
+
+        // Explicit 413 guard: show user-friendly file-size error
+        if (res.status === 413) {
+            loading.style.display = 'none';
+            showError(data.error || 'File size exceeds the 16MB limit. Please select a smaller image.');
+            return;
+        }
         loading.style.display = 'none';
 
         if (data.success && data.predictions) {

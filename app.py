@@ -16,6 +16,7 @@ from flask_limiter.util import get_remote_address
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.exceptions import RequestEntityTooLarge
 
 import torch
 from transformers import AutoImageProcessor, AutoModelForImageClassification
@@ -430,6 +431,27 @@ def server_error(e):
 @app.errorhandler(429)
 def ratelimit_handler(e):
     return jsonify({'success': False, 'error': f'Rate limit exceeded. {e.description}'}), 429
+
+@app.errorhandler(413)
+@app.errorhandler(RequestEntityTooLarge)
+def handle_payload_too_large(e):
+    """RFC 7807 Problem Details response for uploads exceeding MAX_CONTENT_LENGTH.
+
+    Werkzeug raises RequestEntityTooLarge before the request body is fully read,
+    so the WSGI server terminates the stream early — no memory is wasted buffering
+    the oversized payload.
+    """
+    max_mb = Config.MAX_CONTENT_LENGTH // (1024 * 1024)
+    logger.warning("Upload rejected — payload too large (limit: %dMB) path=%s", max_mb, request.path)
+    return jsonify({
+        'type': 'https://visionai.org/errors/payload-too-large',
+        'title': 'Payload Too Large',
+        'status': 413,
+        'detail': f'Uploaded file exceeds the maximum allowed size of {max_mb}MB.',
+        'instance': request.path,
+        'success': False,
+        'error': f'File size exceeds maximum limit of {max_mb}MB. Please select a smaller image.'
+    }), 413
 
 # --- Run ---
 

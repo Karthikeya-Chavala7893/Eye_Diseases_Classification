@@ -34,6 +34,14 @@ class Config:
     SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
     SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
+    ALLOWED_ORIGINS = [
+        origin.strip()
+        for origin in os.environ.get(
+            'ALLOWED_ORIGINS', 'http://localhost:5000,http://127.0.0.1:5000'
+        ).split(',')
+        if origin.strip()
+    ]
+
 # --- Environment Validation ---
 
 logger = logging.getLogger(__name__)
@@ -84,7 +92,7 @@ def validate_config(config_obj):
 
 app = Flask(__name__)
 app.config.from_object(Config)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": Config.ALLOWED_ORIGINS}}, supports_credentials=True)
 
 # Validate configuration before any dependent initialisation
 validate_config(Config)

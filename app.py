@@ -389,9 +389,12 @@ def predict():
         print(f"✅ Prediction: {predictions[0]['label']} ({predictions[0]['confidence']}%)")
         return jsonify({'success': True, 'predictions': predictions,
                         'model': Config.LOCAL_MODEL_ID, 'inference': 'local', 'user': current_user.name})
-    except Exception as e:
-        print(f"❌ Predict error: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+    except (Image.UnidentifiedImageError, Image.DecompressionBombError, OSError) as e:
+        logger.warning("Invalid image upload from %s: %s", current_user.email, e)
+        return jsonify({'success': False, 'error': 'Invalid or corrupted image format. Please upload a valid JPEG/PNG image.'}), 400
+    except Exception:
+        logger.exception("Prediction inference error for user %s", current_user.email)
+        return jsonify({'success': False, 'error': 'An error occurred while processing the image. Please try again.'}), 500
     finally:
         if saved_path and os.path.exists(saved_path):
             try: os.remove(saved_path)

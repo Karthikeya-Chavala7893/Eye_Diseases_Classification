@@ -52,7 +52,12 @@ class Config:
 
 # --- Environment Validation ---
 
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger("visionai")
 
 def validate_config(config_obj):
     """Validate that all mandatory configuration variables are present and non-empty.
@@ -93,8 +98,7 @@ def validate_config(config_obj):
             "Hint: Copy .env.example to .env and fill in all required values."
         )
 
-    logger.info("✅ Environment configuration validated successfully.")
-    print("✅ Environment configuration validated successfully.")
+    logger.info("Environment configuration validated successfully.")
 
 # --- App Initialization ---
 
@@ -145,19 +149,19 @@ google = oauth.register(
 
 
 supabase: Client = create_client(Config.SUPABASE_URL, Config.SUPABASE_KEY)
-print(f"✅ Supabase client initialized: {Config.SUPABASE_URL}")
+logger.info("Supabase client initialized: %s", Config.SUPABASE_URL)
 
 # --- AI Model ---
 
-print(f"🧠 Loading AI model: {Config.LOCAL_MODEL_ID}")
+logger.info("Loading AI model: %s", Config.LOCAL_MODEL_ID)
 try:
     image_processor = AutoImageProcessor.from_pretrained(Config.LOCAL_MODEL_ID)
     eye_model = AutoModelForImageClassification.from_pretrained(Config.LOCAL_MODEL_ID)
     eye_model.eval()
     MODEL_LOADED = True
-    print(f"✅ AI model loaded! Classes: {list(eye_model.config.id2label.values())}")
+    logger.info("AI model loaded successfully. Classes: %s", list(eye_model.config.id2label.values()))
 except Exception as e:
-    print(f"❌ Failed to load AI model: {e}")
+    logger.error("Failed to load AI model: %s", e, exc_info=True)
     image_processor = eye_model = None
     MODEL_LOADED = False
 
@@ -211,7 +215,7 @@ def save_user_to_db(user):
         if not response.data:
             logger.error("Supabase insert returned empty data for %s", user.email)
             raise RuntimeError(f"Database did not confirm insert for {user.email}")
-        print(f"✅ User saved to Supabase: {user.email} | Response: {response.data}")
+        logger.info("User saved to Supabase: %s", user.email)
         return True
     except Exception as e:
         logger.error("SUPABASE INSERT FAILED for %s: %s", user.email, e)
@@ -295,15 +299,15 @@ def google_callback():
         user_info = token.get('userinfo') or google.get('https://www.googleapis.com/oauth2/v3/userinfo').json()
         email = user_info.get('email', '').lower()
         name = user_info.get('name', email.split('@')[0])
-        print(f"🔑 Google OAuth: {name} ({email})")
+        logger.info("Google OAuth login attempt: %s (%s)", name, email)
 
         existing_user = get_user_by_email(email)
         if existing_user:
-            print(f"✅ Existing Google user found: {existing_user.id}")
+            logger.info("Existing Google user authenticated: %s", existing_user.id)
             login_user(existing_user)
         else:
             user_id = str(uuid.uuid4())
-            print(f"🆕 Creating new Google user: {user_id}")
+            logger.info("Creating new Google OAuth user: %s", user_id)
             user = User(id=user_id, email=email, name=name, login_method='Google')
             try:
                 save_user_to_db(user)
@@ -311,7 +315,7 @@ def google_callback():
                 flash('Failed to save user account. Please try again.', 'error')
                 return redirect(url_for('login'))
             login_user(user)
-            print(f"✅ Google user logged in: {user_id}")
+            logger.info("New Google user logged in: %s", user_id)
 
         return redirect(url_for('screening'))
     except OAuthError as e:
@@ -319,9 +323,7 @@ def google_callback():
         flash('Google login failed or was cancelled.', 'error')
         return redirect(url_for('login'))
     except Exception as e:
-        import traceback
-        print(f"❌ Google OAuth error: {e}")
-        traceback.print_exc()
+        logger.error("Google OAuth unexpected error: %s", e, exc_info=True)
         flash('Google Sign-In failed. Please try again.', 'error')
         return redirect(url_for('login'))
 
@@ -384,7 +386,8 @@ def predict():
             key=lambda x: x['confidence'], reverse=True
         )
 
-        print(f"✅ Prediction: {predictions[0]['label']} ({predictions[0]['confidence']}%)")
+        logger.info("Prediction result for %s: %s (%.2f%%)",
+                    current_user.email, predictions[0]['label'], predictions[0]['confidence'])
         return jsonify({'success': True, 'predictions': predictions,
                         'model': Config.LOCAL_MODEL_ID, 'inference': 'local', 'user': current_user.name})
     except (Image.UnidentifiedImageError, Image.DecompressionBombError, OSError) as e:

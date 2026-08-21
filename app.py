@@ -168,6 +168,9 @@ def save_user_to_db(user):
             'role': user.role, 'is_active': user.is_active, 'last_login': user.last_login,
             'created_at': user.created_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(user.created_at, datetime) else user.created_at
         }).execute()
+        if not response.data:
+            logger.error("Supabase insert returned empty data for %s", user.email)
+            raise RuntimeError(f"Database did not confirm insert for {user.email}")
         print(f"✅ User saved to Supabase: {user.email} | Response: {response.data}")
         return True
     except Exception as e:
@@ -214,7 +217,7 @@ def register():
     try:
         save_user_to_db(user)
     except Exception:
-        return jsonify({'success': False, 'error': 'Registration failed. Please try again.'}), 500
+        return jsonify({'success': False, 'error': 'Account creation failed due to storage error. Please try again.'}), 500
     login_user(user)
     return jsonify({'success': True, 'message': 'Account created successfully',
                     'user': {'name': user.name, 'email': user.email}})
@@ -259,7 +262,11 @@ def google_callback():
             user_id = str(uuid.uuid4())
             print(f"🆕 Creating new Google user: {user_id}")
             user = User(id=user_id, email=email, name=name, login_method='Google')
-            save_user_to_db(user)
+            try:
+                save_user_to_db(user)
+            except Exception:
+                flash('Failed to save user account. Please try again.', 'error')
+                return redirect(url_for('login'))
             login_user(user)
             print(f"✅ Google user logged in: {user_id}")
 

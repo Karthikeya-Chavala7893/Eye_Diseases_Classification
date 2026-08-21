@@ -972,10 +972,10 @@ function downloadReport() {
     doc.setTextColor(146, 64, 14);
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
-    doc.text('⚠  MEDICAL DISCLAIMER', M + CW / 2, y + 6, { align: 'center' });
+    doc.text('⚠  EDUCATIONAL DEMONSTRATION DISCLAIMER', M + CW / 2, y + 6, { align: 'center' });
     doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
-    const disc = 'This screening is for informational purposes only and does not constitute medical advice, diagnosis, or treatment. Always seek the advice of a qualified ophthalmologist or healthcare provider. Do not disregard professional medical advice or delay seeking it because of results from this screening tool. For emergencies, contact your local emergency services immediately.';
+    const disc = 'This screening tool is powered by an artificial intelligence model intended strictly for educational and research demonstration purposes. It does not provide medical advice, formal diagnosis, or treatment plans. Always consult a licensed ophthalmologist or healthcare provider for clinical evaluation. Do not disregard professional medical advice or delay seeking it because of results from this screening tool. For emergencies, contact your local emergency services immediately.';
     doc.text(doc.splitTextToSize(disc, CW - 14), M + 7, y + 12);
 
     // ═══ FOOTER ON EVERY PAGE ═══

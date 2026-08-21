@@ -15,12 +15,14 @@ from flask_limiter.util import get_remote_address
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import torch
 from transformers import AutoImageProcessor, AutoModelForImageClassification
 from PIL import Image
 
 from authlib.integrations.flask_client import OAuth
+from authlib.integrations.base_client.errors import OAuthError
 from supabase import create_client, Client
 
 # --- Configuration ---
@@ -38,6 +40,8 @@ class Config:
     SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
     SESSION_COOKIE_SAMESITE = 'Lax'
+
+    PREFERRED_URL_SCHEME = os.environ.get('PREFERRED_URL_SCHEME', 'https')
 
     ALLOWED_ORIGINS = [
         origin.strip()
@@ -97,6 +101,10 @@ def validate_config(config_obj):
 
 app = Flask(__name__)
 app.config.from_object(Config)
+
+# Trust reverse proxy headers (X-Forwarded-For, X-Forwarded-Proto, etc.)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+
 CORS(app, resources={r"/*": {"origins": Config.ALLOWED_ORIGINS}}, supports_credentials=True)
 csrf = CSRFProtect(app)
 limiter = Limiter(
@@ -108,6 +116,12 @@ limiter = Limiter(
 
 # Validate configuration before any dependent initialisation
 validate_config(Config)
+
+# Allow HTTP OAuth redirects in development only (production requires HTTPS)
+if app.debug or os.environ.get('FLASK_ENV') == 'development':
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+else:
+    os.environ.pop('OAUTHLIB_INSECURE_TRANSPORT', None)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -269,7 +283,7 @@ def google_login():
     if not google:
         flash('Google Sign-In is not configured', 'error')
         return redirect(url_for('login'))
-    redirect_uri = 'http://localhost:5000/auth/google/callback'
+    redirect_uri = url_for('google_callback', _external=True, _scheme=Config.PREFERRED_URL_SCHEME)
     return google.authorize_redirect(redirect_uri)
 
 @app.route('/auth/google/callback')
@@ -301,6 +315,10 @@ def google_callback():
             print(f"✅ Google user logged in: {user_id}")
 
         return redirect(url_for('screening'))
+    except OAuthError as e:
+        logger.warning("Google OAuth cancelled or failed: %s", e)
+        flash('Google login failed or was cancelled.', 'error')
+        return redirect(url_for('login'))
     except Exception as e:
         import traceback
         print(f"❌ Google OAuth error: {e}")

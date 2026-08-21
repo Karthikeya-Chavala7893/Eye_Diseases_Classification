@@ -182,8 +182,13 @@
 {% endblock %}
 
 {% block scripts %}
-    <!-- jsPDF (required by report.js) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- jsPDF (required by report.js) — SRI hash pins the exact cdnjs build -->
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+        integrity="sha512-qZvrmS2ekKPF2mSznTQsxqPgnpkI4DNTlrdUmTzrDgektczlKNRRhy5X5AAOnx5S09ydFYWWNSfcEqDTTHgtNA=="
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer">
+    </script>
     <!-- Screening-specific modules (app.js already loaded by base.html) -->
     <script src="{{ url_for('static', filename='js/diseases.js') }}"></script>
     <script src="{{ url_for('static', filename='js/screening.js') }}"></script>

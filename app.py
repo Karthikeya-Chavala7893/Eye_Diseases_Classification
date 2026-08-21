@@ -121,6 +121,37 @@ limiter = Limiter(
 # Validate configuration before any dependent initialisation
 validate_config(Config)
 
+# --- Security Response Headers ---
+
+@app.after_request
+def apply_security_headers(response):
+    """Inject OWASP-recommended HTTP security headers on every response.
+
+    CSP whitelist:
+      - script-src: 'self' + cdnjs (jsPDF SRI-pinned) + 'unsafe-inline' for Jinja2 inline blocks
+      - style-src:  'self' + 'unsafe-inline' + Google Fonts
+      - font-src:   'self' + Google Fonts CDN
+      - img-src:    'self' + data: (base64 previews) + blob: (canvas exports)
+    """
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self';"
+    )
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+
+
+
 # Allow HTTP OAuth redirects in development only (production requires HTTPS)
 if app.debug or os.environ.get('FLASK_ENV') == 'development':
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'

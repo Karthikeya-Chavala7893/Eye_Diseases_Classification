@@ -487,8 +487,10 @@ async function analyze() {
         form.append('image', State.file);
 
         // CRITICAL: Include credentials (session cookies) with the request
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
         const res = await fetch('/predict', {
             method: 'POST',
+            headers: csrfToken ? { 'X-CSRFToken': csrfToken } : {},
             body: form,
             credentials: 'same-origin'  // This sends cookies with the request
         });

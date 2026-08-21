@@ -1,31 +1,12 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% block meta %}
     <meta name="description" content="VisionAI - AI-powered eye disease screening and analysis">
-    <title>Eye Screening | VisionAI Eye Hospital</title>
+{% endblock %}
 
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap"
-        rel="stylesheet">
+{% block title %}Eye Screening | VisionAI Eye Hospital{% endblock %}
 
-    <!-- Styles -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-
-    <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml"
-        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
-
-    <!-- CSRF Token -->
-    <meta name="csrf-token" content="{{ csrf_token() }}">
-</head>
-
-<body>
+{% block navbar %}
     <!-- Navigation -->
     <nav class="navbar" id="navbar">
         <div class="nav-container">
@@ -68,7 +49,9 @@
             </button>
         </div>
     </nav>
+{% endblock %}
 
+{% block content %}
     <!-- Main Content -->
     <main class="screening-main">
         <div class="container">
@@ -181,20 +164,24 @@
                 </div>
                 <div class="info-card">
                     <div class="info-icon">🔐</div>
-                    <h4>Secure & Private</h4>
+                    <h4>Secure &amp; Private</h4>
                     <p>Your images are processed securely and never stored</p>
                 </div>
             </div>
         </div>
     </main>
+{% endblock %}
 
+{% block footer %}
     <!-- Footer -->
     <footer class="footer-minimal">
         <div class="container">
             <p>&copy; 2024 VisionAI Eye Hospital. For educational purposes only.</p>
         </div>
     </footer>
+{% endblock %}
 
+{% block scripts %}
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
@@ -213,7 +200,9 @@
             }
         });
     </script>
+{% endblock %}
 
+{% block extra_styles %}
     <style>
         /* Screening Page Specific Styles */
         .screening-main {
@@ -433,6 +422,4 @@
             }
         }
     </style>
-</body>
-
-</html>
+{% endblock %}

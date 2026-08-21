@@ -5,6 +5,19 @@
  */
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CSRF TOKEN HELPER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Retrieves the CSRF token from the meta tag injected by Flask-WTF.
+ * Returns an empty string if the meta tag is not present (e.g., on pages
+ * that don't require CSRF protection).
+ */
+function getCSRFToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // DISEASE KNOWLEDGE BASE
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -486,11 +499,10 @@ async function analyze() {
         const form = new FormData();
         form.append('image', State.file);
 
-        // CRITICAL: Include credentials (session cookies) with the request
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        // CRITICAL: Include credentials (session cookies) and CSRF token with the request
         const res = await fetch('/predict', {
             method: 'POST',
-            headers: csrfToken ? { 'X-CSRFToken': csrfToken } : {},
+            headers: { 'X-CSRFToken': getCSRFToken() },
             body: form,
             credentials: 'same-origin'  // This sends cookies with the request
         });

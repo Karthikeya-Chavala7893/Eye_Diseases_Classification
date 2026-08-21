@@ -10,6 +10,8 @@ load_dotenv()
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from flask_cors import CORS
 from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -34,6 +36,8 @@ class Config:
 
     SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
     SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
+
+    SESSION_COOKIE_SAMESITE = 'Lax'
 
     ALLOWED_ORIGINS = [
         origin.strip()
@@ -95,6 +99,12 @@ app = Flask(__name__)
 app.config.from_object(Config)
 CORS(app, resources={r"/*": {"origins": Config.ALLOWED_ORIGINS}}, supports_credentials=True)
 csrf = CSRFProtect(app)
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"
+)
 
 # Validate configuration before any dependent initialisation
 validate_config(Config)
@@ -216,6 +226,7 @@ def login():
     return render_template('login.html')
 
 @app.route('/auth/register', methods=['POST'])
+@limiter.limit("15 per hour")
 def register():
     data = request.get_json()
     email = data.get('email', '').strip().lower()
@@ -240,6 +251,7 @@ def register():
                     'user': {'name': user.name, 'email': user.email}})
 
 @app.route('/auth/login', methods=['POST'])
+@limiter.limit("5 per minute")
 def login_post():
     data = request.get_json()
     email = data.get('email', '').strip().lower()
@@ -252,6 +264,7 @@ def login_post():
                     'user': {'name': user.name, 'email': user.email}})
 
 @app.route('/auth/google')
+@limiter.limit("5 per minute")
 def google_login():
     if not google:
         flash('Google Sign-In is not configured', 'error')
@@ -322,6 +335,7 @@ def screening():
 
 @app.route('/predict', methods=['POST'])
 @login_required
+@limiter.limit("10 per minute")
 def predict():
     if not MODEL_LOADED:
         return jsonify({'success': False, 'error': 'AI model is not loaded. Please restart the server.'}), 503
@@ -366,12 +380,14 @@ def predict():
             except OSError: pass
 
 @app.route('/health')
+@limiter.exempt
 def health():
     return jsonify({'status': 'healthy', 'model': Config.LOCAL_MODEL_ID,
                     'model_loaded': MODEL_LOADED, 'inference': 'local',
                     'google_oauth_configured': bool(Config.GOOGLE_CLIENT_ID)})
 
 @app.route('/config')
+@limiter.exempt
 def get_config():
     return jsonify({'model': Config.LOCAL_MODEL_ID, 'inference': 'local', 'model_loaded': MODEL_LOADED,
                     'maxFileSize': Config.MAX_CONTENT_LENGTH, 'allowedFormats': list(Config.ALLOWED_EXTENSIONS),
@@ -392,6 +408,10 @@ def not_found(e):
 @app.errorhandler(500)
 def server_error(e):
     return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify({'success': False, 'error': f'Rate limit exceeded. {e.description}'}), 429
 
 # --- Run ---
 

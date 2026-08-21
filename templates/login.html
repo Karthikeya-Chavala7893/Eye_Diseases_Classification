@@ -567,6 +567,11 @@
     </div>
 
     <script>
+        // CSRF token helper
+        function getCSRFToken() {
+            return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        }
+
         // Tab switching
         document.querySelectorAll('.auth-tab').forEach(tab => {
             tab.addEventListener('click', () => {
@@ -609,7 +614,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+                        'X-CSRFToken': getCSRFToken()
                     },
                     body: JSON.stringify({
                         email: document.getElementById('loginEmail').value,
@@ -662,7 +667,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+                        'X-CSRFToken': getCSRFToken()
                     },
                     body: JSON.stringify({
                         name: document.getElementById('regName').value,

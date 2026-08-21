@@ -2,7 +2,6 @@
 
 import logging
 import os
-import secrets
 import uuid
 from datetime import datetime
 from dotenv import load_dotenv
@@ -57,6 +56,14 @@ def validate_config(config_obj):
         value = getattr(config_obj, key, None)
         if not value or not str(value).strip():
             errors.append(f"  - {key} is missing or empty. Set it in your .env file or environment.")
+
+    # Enforce minimum entropy for SECRET_KEY (at least 128-bit / 16-character random string)
+    secret_key = getattr(config_obj, 'SECRET_KEY', '') or ''
+    if secret_key.strip() and len(secret_key.strip()) < 16:
+        errors.append(
+            "  - SECRET_KEY is too short (must be at least 16 characters). "
+            "Use a high-entropy random string for secure session signing."
+        )
 
     for key in optional_keys:
         value = getattr(config_obj, key, None)

@@ -1,5 +1,6 @@
 """VisionAI Eye Hospital - AI-Powered Retinal Screening Backend"""
 
+import logging
 import os
 import secrets
 from datetime import datetime
@@ -22,7 +23,7 @@ from supabase import create_client, Client
 # --- Configuration ---
 
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+    SECRET_KEY = os.environ.get('SECRET_KEY', '')
     LOCAL_MODEL_ID = 'NeuronZero/EyeDiseaseClassifier'
     UPLOAD_FOLDER = 'uploads'
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
@@ -33,11 +34,52 @@ class Config:
     SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
     SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
+# --- Environment Validation ---
+
+logger = logging.getLogger(__name__)
+
+def validate_config(config_obj):
+    """Validate that all mandatory configuration variables are present and non-empty.
+
+    Raises RuntimeError with a descriptive message listing all missing variables
+    if any required configuration is absent or whitespace-only.
+    Optional OAuth variables trigger a warning but allow startup to continue.
+
+    Args:
+        config_obj: The Config class or object to validate.
+    """
+    required_keys = ['SECRET_KEY', 'SUPABASE_URL', 'SUPABASE_KEY']
+    optional_keys = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET']
+    errors = []
+
+    for key in required_keys:
+        value = getattr(config_obj, key, None)
+        if not value or not str(value).strip():
+            errors.append(f"  - {key} is missing or empty. Set it in your .env file or environment.")
+
+    for key in optional_keys:
+        value = getattr(config_obj, key, None)
+        if not value or not str(value).strip():
+            logger.warning("Optional config '%s' is not set. Related features (e.g., Google OAuth) will be disabled.", key)
+
+    if errors:
+        raise RuntimeError(
+            "Critical Configuration Error — the following required environment "
+            "variables are missing or empty:\n" + "\n".join(errors) + "\n\n"
+            "Hint: Copy .env.example to .env and fill in all required values."
+        )
+
+    logger.info("✅ Environment configuration validated successfully.")
+    print("✅ Environment configuration validated successfully.")
+
 # --- App Initialization ---
 
 app = Flask(__name__)
 app.config.from_object(Config)
 CORS(app)
+
+# Validate configuration before any dependent initialisation
+validate_config(Config)
 
 login_manager = LoginManager()
 login_manager.init_app(app)

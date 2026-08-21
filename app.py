@@ -3,6 +3,7 @@
 import logging
 import os
 import secrets
+import uuid
 from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
@@ -148,16 +149,30 @@ def _row_to_user(row):
     )
 
 def save_user_to_db(user):
+    """Insert a new user record into Supabase.
+
+    Uses .insert() instead of .upsert() to prevent silent overwrites on
+    primary-key or unique-constraint collisions.
+
+    Returns:
+        True on success, False on failure.
+
+    Raises:
+        Exception: Re-raises the database error after logging so callers
+            can react (e.g. return an HTTP error response).
+    """
     try:
-        response = supabase.table('users').upsert({
+        response = supabase.table('users').insert({
             'id': user.id, 'email': user.email, 'name': user.name, 'phone': user.phone,
             'password_hash': user.password_hash, 'login_method': user.login_method,
             'role': user.role, 'is_active': user.is_active, 'last_login': user.last_login,
             'created_at': user.created_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(user.created_at, datetime) else user.created_at
         }).execute()
         print(f"✅ User saved to Supabase: {user.email} | Response: {response.data}")
+        return True
     except Exception as e:
-        print(f"❌ SUPABASE INSERT FAILED for {user.email}: {e}")
+        logger.error("SUPABASE INSERT FAILED for %s: %s", user.email, e)
+        raise
 
 def get_user_by_id(user_id):
     result = supabase.table('users').select('*').eq('id', user_id).execute()
@@ -166,10 +181,6 @@ def get_user_by_id(user_id):
 def get_user_by_email(email):
     result = supabase.table('users').select('*').eq('email', email).execute()
     return _row_to_user(result.data[0]) if result.data else None
-
-def get_next_user_id(prefix='user'):
-    result = supabase.table('users').select('id', count='exact').execute()
-    return f"{prefix}_{(result.count or 0) + 1}"
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -198,9 +209,12 @@ def register():
     if get_user_by_email(email):
         return jsonify({'success': False, 'error': 'Email already registered'}), 400
 
-    user = User(id=get_next_user_id('user'), email=email, name=name,
+    user = User(id=str(uuid.uuid4()), email=email, name=name,
                 password_hash=generate_password_hash(password), login_method='Password')
-    save_user_to_db(user)
+    try:
+        save_user_to_db(user)
+    except Exception:
+        return jsonify({'success': False, 'error': 'Registration failed. Please try again.'}), 500
     login_user(user)
     return jsonify({'success': True, 'message': 'Account created successfully',
                     'user': {'name': user.name, 'email': user.email}})
@@ -242,7 +256,7 @@ def google_callback():
             print(f"✅ Existing Google user found: {existing_user.id}")
             login_user(existing_user)
         else:
-            user_id = get_next_user_id('google')
+            user_id = str(uuid.uuid4())
             print(f"🆕 Creating new Google user: {user_id}")
             user = User(id=user_id, email=email, name=name, login_method='Google')
             save_user_to_db(user)

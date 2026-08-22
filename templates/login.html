@@ -1,26 +1,14 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% block meta %}
     <meta name="description" content="VisionAI - Secure login for AI-powered eye health screening">
-    <title>Login | VisionAI Eye Hospital</title>
+{% endblock %}
 
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap"
-        rel="stylesheet">
+{% block title %}Login | VisionAI Eye Hospital{% endblock %}
 
-    <!-- Styles -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% block body_class %}auth-page{% endblock %}
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml"
-        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
-
+{% block extra_head %}
     <style>
         /* Auth Page Specific Styles */
         html,
@@ -437,9 +425,9 @@
             border-color: var(--gray-300);
         }
     </style>
-</head>
+{% endblock %}
 
-<body class="auth-page">
+{% block content %}
     <div class="auth-bg-pattern"></div>
 
     <div class="auth-container">
@@ -552,8 +540,8 @@
                     <span>Secure Login</span>
                 </div>
                 <div class="trust-badge">
-                    <span>🏥</span>
-                    <span>HIPAA Ready</span>
+                    <span>🔐</span>
+                    <span>End-to-End Encryption</span>
                 </div>
                 <div class="trust-badge">
                     <span>🛡️</span>
@@ -562,8 +550,15 @@
             </div>
         </div>
     </div>
+{% endblock %}
 
+{% block scripts %}
     <script>
+        // CSRF token helper
+        function getCSRFToken() {
+            return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        }
+
         // Tab switching
         document.querySelectorAll('.auth-tab').forEach(tab => {
             tab.addEventListener('click', () => {
@@ -604,7 +599,10 @@
             try {
                 const res = await fetch('/auth/login', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCSRFToken()
+                    },
                     body: JSON.stringify({
                         email: document.getElementById('loginEmail').value,
                         password: document.getElementById('loginPassword').value
@@ -654,7 +652,10 @@
             try {
                 const res = await fetch('/auth/register', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCSRFToken()
+                    },
                     body: JSON.stringify({
                         name: document.getElementById('regName').value,
                         email: document.getElementById('regEmail').value,
@@ -686,6 +687,4 @@
             document.documentElement.setAttribute('data-theme', 'dark');
         }
     </script>
-</body>
-
-</html>
+{% endblock %}

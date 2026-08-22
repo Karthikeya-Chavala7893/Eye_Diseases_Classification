@@ -340,7 +340,7 @@ def predict():
 |:---|:---|:---|
 | **Navigation Bar** | Logo, page links, theme toggle, user menu | Glassmorphism navbar with backdrop blur |
 | **Hero Section** | Main headline, description, CTA buttons, stats | Animated eye graphic with scan line + floating cards |
-| **Trust Indicators** | Clinically Validated, HIPAA, Instant Results, etc. | Horizontal badge strip |
+| **Trust Indicators** | Clinically Validated, Clinical-Grade AI, Instant Results, etc. | Horizontal badge strip |
 | **Features Grid** | 6 feature cards (Early Detection, AI Analysis, etc.) | Responsive grid with hover animations |
 | **How It Works** | 3-step process (Upload → Analyze → Results) | Connected cards with arrows |
 | **AI Screening CTA** | Login prompt or "Go to Screening" button | Dynamic content based on auth state (Jinja2 `{% if user %}`) |
@@ -364,7 +364,7 @@ def predict():
 | **Google OAuth Button** | Links to `/auth/google` → Google's consent screen → callback |
 | **Error/Success Alerts** | Animated alert banners for feedback |
 | **Loading States** | Button shows spinner during API calls |
-| **Trust Badges** | 🔒 Secure Login, 🏥 HIPAA Ready, 🛡️ Data Protected |
+| **Trust Badges** | 🔒 Secure Login, 🔐 End-to-End Encryption, 🛡️ Data Protected |
 | **Dark Mode** | Respects system preference + manual toggle |
 
 ---

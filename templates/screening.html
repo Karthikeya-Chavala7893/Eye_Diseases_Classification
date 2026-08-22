@@ -1,28 +1,12 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% block meta %}
     <meta name="description" content="VisionAI - AI-powered eye disease screening and analysis">
-    <title>Eye Screening | VisionAI Eye Hospital</title>
+{% endblock %}
 
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap"
-        rel="stylesheet">
+{% block title %}Eye Screening | VisionAI Eye Hospital{% endblock %}
 
-    <!-- Styles -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-
-    <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml"
-        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
-</head>
-
-<body>
+{% block navbar %}
     <!-- Navigation -->
     <nav class="navbar" id="navbar">
         <div class="nav-container">
@@ -65,7 +49,9 @@
             </button>
         </div>
     </nav>
+{% endblock %}
 
+{% block content %}
     <!-- Main Content -->
     <main class="screening-main">
         <div class="container">
@@ -139,12 +125,14 @@
                                 <span>New Analysis</span>
                             </button>
                         </div>
-                        <div class="disclaimer-box">
+                        <div class="disclaimer-box" role="note" aria-label="Medical Disclaimer">
                             <span class="disclaimer-icon">⚠️</span>
                             <div class="disclaimer-content">
-                                <strong>Medical Disclaimer</strong>
-                                <p>This screening is for informational purposes only. Always consult an ophthalmologist
-                                    for diagnosis and treatment.</p>
+                                <strong>EDUCATIONAL DEMONSTRATION DISCLAIMER</strong>
+                                <p>This screening tool is powered by an artificial intelligence model intended
+                                    strictly for educational and research demonstration purposes. It does not provide
+                                    medical advice, formal diagnosis, or treatment plans. Always consult a licensed
+                                    ophthalmologist or healthcare provider for clinical evaluation.</p>
                             </div>
                         </div>
                     </div>
@@ -176,39 +164,38 @@
                 </div>
                 <div class="info-card">
                     <div class="info-icon">🔐</div>
-                    <h4>Secure & Private</h4>
+                    <h4>Secure &amp; Private</h4>
                     <p>Your images are processed securely and never stored</p>
                 </div>
             </div>
         </div>
     </main>
+{% endblock %}
 
+{% block footer %}
     <!-- Footer -->
     <footer class="footer-minimal">
         <div class="container">
             <p>&copy; 2024 VisionAI Eye Hospital. For educational purposes only.</p>
         </div>
     </footer>
+{% endblock %}
 
-    <!-- Scripts -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
-    <script>
-        // User dropdown toggle
-        const userBtn = document.getElementById('userBtn');
-        const userDropdown = document.getElementById('userDropdown');
-
-        userBtn?.addEventListener('click', () => {
-            userDropdown.classList.toggle('show');
-        });
-
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.user-menu')) {
-                userDropdown?.classList.remove('show');
-            }
-        });
+{% block scripts %}
+    <!-- jsPDF (required by report.js) — SRI hash pins the exact cdnjs build -->
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+        integrity="sha512-qZvrmS2ekKPF2mSznTQsxqPgnpkI4DNTlrdUmTzrDgektczlKNRRhy5X5AAOnx5S09ydFYWWNSfcEqDTTHgtNA=="
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer">
     </script>
+    <!-- Screening-specific modules (app.js already loaded by base.html) -->
+    <script src="{{ url_for('static', filename='js/diseases.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/screening.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/report.js') }}"></script>
+{% endblock %}
 
+{% block extra_styles %}
     <style>
         /* Screening Page Specific Styles */
         .screening-main {
@@ -428,6 +415,4 @@
             }
         }
     </style>
-</body>
-
-</html>
+{% endblock %}

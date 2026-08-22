@@ -1,33 +1,17 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% block meta %}
     <meta name="description"
         content="VisionAI - Advanced AI-powered eye disease detection, screening, and prevention. Protecting your vision with cutting-edge technology.">
     <meta name="keywords"
         content="eye health, diabetic retinopathy, AI screening, eye hospital, vision care, eye disease detection">
     <meta name="author" content="VisionAI Eye Care">
     <meta name="theme-color" content="#0EA5E9">
-    <title>VisionAI | AI-Powered Eye Disease Detection & Prevention</title>
+{% endblock %}
 
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600&display=swap"
-        rel="stylesheet">
+{% block title %}VisionAI | AI-Powered Eye Disease Detection &amp; Prevention{% endblock %}
 
-    <!-- Styles -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-
-    <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml"
-        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
-</head>
-
-<body>
+{% block navbar %}
     <!-- Navigation -->
     <nav class="navbar" id="navbar">
         <div class="nav-container">
@@ -79,7 +63,9 @@
             </button>
         </div>
     </nav>
+{% endblock %}
 
+{% block content %}
     <!-- Hero Section -->
     <section class="hero" id="home">
         <div class="hero-bg">
@@ -170,8 +156,8 @@
                     <span class="trust-text">Clinically Validated</span>
                 </div>
                 <div class="trust-item">
-                    <span class="trust-icon">🔒</span>
-                    <span class="trust-text">HIPAA Compliant</span>
+                    <span class="trust-icon">🤖</span>
+                    <span class="trust-text">Clinical-Grade AI</span>
                 </div>
                 <div class="trust-item">
                     <span class="trust-icon">⚡</span>
@@ -398,7 +384,7 @@
                         <li>Annual comprehensive eye exams</li>
                         <li>Manage blood pressure</li>
                         <li>Quit smoking</li>
-                        <li>Healthy diet & exercise</li>
+                        <li>Healthy diet &amp; exercise</li>
                     </ul>
                 </div>
             </div>
@@ -443,7 +429,9 @@
             </div>
         </div>
     </section>
+{% endblock %}
 
+{% block footer %}
     <!-- Footer -->
     <footer class="footer">
         <div class="container">
@@ -489,11 +477,11 @@
             </div>
         </div>
     </footer>
+{% endblock %}
 
-    <!-- Scripts -->
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+{% block scripts %}
     <script>
-        // User dropdown toggle
+        // User dropdown toggle (index page only)
         const userBtn = document.getElementById('userBtn');
         const userDropdown = document.getElementById('userDropdown');
 
@@ -507,7 +495,9 @@
             }
         });
     </script>
+{% endblock %}
 
+{% block extra_styles %}
     <style>
         /* User Menu Styles */
         .user-menu {
@@ -700,6 +690,4 @@
             }
         }
     </style>
-</body>
-
-</html>
+{% endblock %}

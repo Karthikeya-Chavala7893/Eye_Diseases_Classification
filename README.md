@@ -147,10 +147,14 @@ VisionAI operates across two distinct diagnostic tiers with specific image requi
 ## 🤖 7. What Type of Models Are Used?
 
 ### 1. Model 1 (Clinical Mode): `retfound-visionai` (RETFound ViT-Large/16)
+- **Base Model Used**: **RETFound** (`vit_large_patch16_224` — Vision Transformer ViT-Large/16).
+- **Developed By**:
+  - **Original Foundation Model**: Developed by researchers at **University College London (UCL) Institute of Ophthalmology** and **Moorfields Eye Hospital NHS Foundation Trust** (led by Yukun Zhou, Pearse A. Keane, et al.; published in [*Nature*, 2023](https://doi.org/10.1038/s41586-023-06555-x)).
+  - **Clinical Fine-Tuning**: Fine-tuned and adapted for 4-class retinal disease detection by **Karthikeya Chavala**.
+- **Parameters**: **307 Million Parameters** (~304M ViT-Large backbone + multi-layer classification head).
+- **Model Architecture**: **Vision Transformer (ViT-Large/16)** with 24 Transformer Encoder layers, 1024 hidden embedding dimension, and 16 Attention Heads.
+- **Pre-Training & Scale**: Pre-trained on **1.6 million unlabelled retinal images** (color fundus photographs and OCT scans) using self-supervised Masked Autoencoders (MAE).
 - **HuggingFace Repository**: [`Karthikeya-Chavala7893/retfound-visionai`](https://huggingface.co/Karthikeya-Chavala7893/retfound-visionai)
-- **Model Architecture**: **Vision Transformer (ViT-Large/16)** with 24 Transformer Encoder layers and 16 Attention Heads.
-- **Pre-Training**: Pre-trained on **1.6 million unlabelled retinal images** from Moorfields Eye Hospital & UCL (*Nature*, 2023) using Masked Autoencoders (MAE).
-- **Parameters**: **307 Million Parameters**.
 - **Input Type**: **Retinal Fundus Photographs / OCT Scans**.
 
 ### 2. Model 2 (Home Mode): `NeuronZero/EyeDiseaseClassifier` (BEiT Transformer)

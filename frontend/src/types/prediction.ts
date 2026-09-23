@@ -20,6 +20,12 @@ export interface PredictionResult {
   confidence: number;
   /** Set by home triage when an urgent symptom forced this card to the top. */
   red_flag?: boolean;
+  /** Evidence source: 'ai_model' | 'symptoms' | 'photo_only'. Home mode only. */
+  source?: 'ai_model' | 'symptoms' | 'photo_only';
+  /** True when the model classified the eye as Normal (healthy). Home mode only. */
+  is_healthy?: boolean;
+  /** True when only pixel cues were used (no model, no symptoms). Confidence is capped. */
+  low_evidence?: boolean;
 }
 
 /** Coarse colour cues read off a home-mode photo; both range 0–1. */
@@ -42,6 +48,8 @@ export interface PredictResponse {
   user: string;
   /** Present in home mode when a photo was supplied. */
   cues?: ImageCues;
+  /** True when the NeuronZero model was used for home screening classification. */
+  home_model_used?: boolean;
 }
 
 /** One entry in a user's persisted screening history. */

@@ -45,6 +45,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 import db
 import model
+import home_model
 import triage
 from auth import require_admin, require_auth
 from config import Config, validate_config
@@ -66,6 +67,9 @@ SCREENING_MODES = (MODE_CLINICAL, MODE_HOME)
 #: Pseudo-model id reported for home screenings so history rows stay honest
 #: about the fact that no neural network was involved.
 HOME_ENGINE_ID = 'rule-based-triage-v1'
+
+#: Engine id reported when the NeuronZero model was used for home screening.
+HOME_ENGINE_ID_AI = 'neuronzero-triage-v2'
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -154,6 +158,13 @@ def init_services() -> None:
         model.load_model()
     except RuntimeError:
         logger.error("AI model unavailable — /api/predict will return 503.")
+
+    try:
+        home_model.load_home_model()
+    except RuntimeError:
+        logger.warning(
+            "Home screening model unavailable — home mode will use pixel cues only."
+        )
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -265,10 +276,13 @@ def health():
         The status is 'healthy' only when both subsystems are up.
     """
     model_loaded = model.is_loaded()
+    home_loaded = home_model.is_home_model_loaded()
     firebase_connected = db.is_connected()
     return ok({
         'status': 'healthy' if (model_loaded and firebase_connected) else 'degraded',
         'model_loaded': model_loaded,
+        'home_model_loaded': home_loaded,
+        'use_home_ai_model': Config.USE_HOME_AI_MODEL,
         'firebase_connected': firebase_connected,
         'model': Config.LOCAL_MODEL_ID,
         'inference': 'local',
@@ -364,9 +378,9 @@ def _screen_clinical(image_bytes: bytes):
             "Clinical upload rejected (not a fundus image) for uid=%s", g.uid
         )
         return fail(
-            'This AI model requires a retinal fundus photograph — a specialised clinical '
-            'image of the back of the retina taken with a fundus camera. Regular eye photos '
-            'or selfies will not produce accurate results. Please upload a valid fundus image.',
+            'This AI model requires a colour retinal fundus photograph — a specialised clinical '
+            'photograph of the retina taken with a fundus camera. Grayscale OCT scans, regular eye photos '
+            'or selfies will not produce accurate results. Please upload a valid colour fundus image.',
             400,
         )
 
@@ -401,7 +415,17 @@ def _screen_clinical(image_bytes: bytes):
 
 
 def _screen_home(image_bytes: bytes):
-    """Score a home screening with the rule engine. See :func:`predict`."""
+    """Score a home screening with the triage engine, optionally augmented by
+    the NeuronZero AI model.  See :func:`predict`.
+
+    Pipeline:
+      1. Parse symptoms from the form.
+      2. Guard against fundus images (belong in clinical mode).
+      3. Extract pixel-level colour cues (fast, CPU, always runs).
+      4. Run NeuronZero model if available (may return []).
+      5. Score with all evidence combined via ``assess_with_model``
+         (falls back to ``assess`` when the model is unavailable).
+    """
     try:
         symptoms = _parse_symptoms(request.form.get('symptoms'))
     except ValueError as exc:
@@ -420,30 +444,47 @@ def _screen_home(image_bytes: bytes):
             400,
         )
 
+    # Step 3: Pixel-level colour cues (always available, zero ML cost)
     cues = triage.inspect_image(image_bytes) if image_bytes else {}
 
+    # Step 4: Optional home AI model (Option 1 uses calibrated optical engine by default;
+    # secondary model can be enabled via USE_HOME_AI_MODEL=true).
+    model_predictions = []
+    home_model_used = False
+    if Config.USE_HOME_AI_MODEL and image_bytes and home_model.is_home_model_loaded():
+        model_predictions = home_model.predict_home(image_bytes)
+        home_model_used = bool(model_predictions)
+
+    # Step 5: Score with all evidence combined
     try:
-        predictions = triage.assess(symptoms, cues)
+        if model_predictions:
+            predictions = triage.assess_with_model(symptoms, cues, model_predictions)
+        else:
+            predictions = triage.assess(symptoms, cues)
     except ValueError:
         return fail(
             'Select at least one symptom, or add a photo, so we have something to assess.',
             400,
         )
 
+    engine_id = HOME_ENGINE_ID_AI if home_model_used else HOME_ENGINE_ID
+
     logger.info(
-        "Home triage for uid=%s: %s (%.2f%% match, %d symptom(s))",
-        g.uid, predictions[0]['label'], predictions[0]['confidence'], len(symptoms),
+        "Home triage for uid=%s: %s (%.2f%% match, %d symptom(s), model=%s)",
+        g.uid, predictions[0]['label'], predictions[0]['confidence'],
+        len(symptoms), home_model_used,
     )
 
-    _persist(predictions, image_bytes, model_id=HOME_ENGINE_ID)
+    _persist(predictions, image_bytes, model_id=engine_id)
 
     return ok({
         'predictions': predictions,
         'mode': MODE_HOME,
-        'model': HOME_ENGINE_ID,
+        'model': engine_id,
         'inference': 'local',
         'user': g.display_name,
         'cues': cues,
+        'home_model_used': home_model_used,
     })
 
 

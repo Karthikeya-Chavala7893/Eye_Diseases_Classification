@@ -150,15 +150,55 @@ def is_fundus_image(image_bytes: bytes) -> bool:
     red_dominant = float(np.mean((r > g) & (r > b)))
     is_skin_tone = red_dominant > 0.85  # Skin tones: ~0.90-0.98; fundus: ~0.3-0.65
 
+    # ── TERTIARY: Grayscale OCT scan exclusion ───────────────────────────────
+    # Cross-sectional OCT scans and monochrome vessel masks have R ≈ G ≈ B (channel diff < 3).
+    # True color retinal fundus photography has rich chromatic contrast with red/orange dominance.
+    channel_chroma = float(np.mean(np.abs(r - g) + np.abs(g - b)))
+    is_grayscale_oct = channel_chroma < 4.0
+
     logger.debug(
-        'Fundus heuristic: dark_border=%.3f(>=%s → %s) red_dom=%.3f(is_skin=%s) → is_fundus=%s',
+        'Fundus heuristic: dark_border=%.3f(>=%s → %s) red_dom=%.3f(is_skin=%s) chroma=%.2f(is_oct=%s) → is_fundus=%s',
         border_dark_fraction, _FUNDUS_DARK_BORDER_MIN, has_dark_border,
         red_dominant, is_skin_tone,
-        has_dark_border and not is_skin_tone,
+        channel_chroma, is_grayscale_oct,
+        has_dark_border and not is_skin_tone and not is_grayscale_oct,
     )
 
-    # Must have a dark border AND not look like a skin-tone image.
-    return has_dark_border and not is_skin_tone
+    # Must have a circular dark border, not look like skin, and not be a monochrome OCT scan.
+    return has_dark_border and not is_skin_tone and not is_grayscale_oct
+
+
+def crop_retina_circle(image: Image.Image, tol: int = 15) -> Image.Image:
+    """Crop out the black camera frame to isolate the retina ROI.
+    
+    Ensures input image resolution matches the ROI cropping used during
+    the 92.77% fine-tuning of the RETFound classifier.
+    """
+    img_np = np.array(image)
+    if img_np.ndim != 3 or img_np.shape[2] < 3:
+        return image
+    gray = np.mean(img_np[:, :, :3], axis=2)
+    mask = gray > tol
+    if not np.any(mask):
+        return image
+    row_sum = np.sum(mask, axis=1)
+    col_sum = np.sum(mask, axis=0)
+    y_idx = np.where(row_sum > 0)[0]
+    x_idx = np.where(col_sum > 0)[0]
+    if len(y_idx) == 0 or len(x_idx) == 0:
+        return image
+
+    y_min, y_max = y_idx[0], y_idx[-1]
+    x_min, x_max = x_idx[0], x_idx[-1]
+    side = max(y_max - y_min, x_max - x_min)
+    cy, cx = (y_min + y_max) // 2, (x_min + x_max) // 2
+
+    y1 = max(0, cy - side // 2)
+    y2 = min(img_np.shape[0], cy + side // 2)
+    x1 = max(0, cx - side // 2)
+    x2 = min(img_np.shape[1], cx + side // 2)
+    return Image.fromarray(img_np[y1:y2, x1:x2])
+
 
 
 def load_model() -> None:
@@ -282,6 +322,7 @@ def predict(image_bytes: bytes) -> list[dict]:
     try:
         image_stream = io.BytesIO(image_bytes)
         image = Image.open(image_stream).convert('RGB')
+        image = crop_retina_circle(image)
     except Image.DecompressionBombError as exc:
         raise ValueError(f"Image exceeds safe decompression limits: {exc}") from exc
     except (Image.UnidentifiedImageError, OSError, ValueError) as exc:

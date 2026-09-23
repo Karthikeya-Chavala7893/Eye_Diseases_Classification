@@ -115,7 +115,10 @@ class TestFrontendContract:
     def test_every_card_has_a_frontend_knowledge_base_entry(self):
         source = self._read(DISEASES_TS)
         home_keys = set(re.findall(r'^\s{4}(Home_[A-Za-z_]+):\s*\{', source, re.MULTILINE))
-        assert home_keys == set(triage.CARDS)
+        # Home_Healthy is in HOME_DB but deliberately excluded from CARDS
+        # (it's a special-case result from assess_with_model, not a disease card).
+        expected = set(triage.CARDS) | {triage.CARD_HEALTHY}
+        assert home_keys == expected
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -218,6 +221,67 @@ class TestInspectImage:
         """A milky photo must not override an explicit red-flag report."""
         cues = triage.inspect_image(_solid_png((215, 215, 210)))
         assert triage.assess(['sudden_blur'], cues)[0]['label'] == triage.CARD_VISION_ALERT
+
+    def test_clean_photo_without_symptoms_returns_healthy(self):
+        """A clean photo with no symptoms returns Home_Healthy."""
+        cues = triage.inspect_image(_solid_png((90, 95, 100)))
+        res = triage.assess([], cues)
+        assert len(res) == 1
+        assert res[0]['label'] == triage.CARD_HEALTHY
+        assert res[0]['is_healthy'] is True
+
+    def test_damaged_red_photo_returns_high_confidence_red_eye(self):
+        """A bloodshot photo alone scores Red Eye with >85% confidence."""
+        cues = triage.inspect_image(_solid_png((220, 40, 40)))
+        res = triage.assess([], cues)
+        assert res[0]['label'] == triage.CARD_RED_EYE
+        assert res[0]['confidence'] > 85.0
+
+    def test_assess_with_model_flat_noise_returns_healthy(self):
+        """Flat out-of-domain model predictions do not trigger Vision Alert."""
+        cues = {'redness': 0.23, 'haze': 0.03}
+        preds = [
+            {'label': 'Other', 'confidence': 25.4},
+            {'label': 'Cataract', 'confidence': 18.2},
+            {'label': 'Glaucoma', 'confidence': 16.3},
+            {'label': 'Normal', 'confidence': 16.1},
+        ]
+        res = triage.assess_with_model([], cues, preds)
+        assert res[0]['label'] == triage.CARD_HEALTHY
+        assert res[0]['is_healthy'] is True
+
+    def test_moderate_and_damaged_cues_produce_distinct_results(self):
+        """Moderate redness (mid eye) and acute redness (damaged eye) must not produce identical cards."""
+        mid_cues = {'redness': 0.4269, 'haze': 0.0843}
+        damaged_cues = {'redness': 0.4819, 'haze': 0.0947}
+        mid_res = triage.assess([], mid_cues)
+        damaged_res = triage.assess([], damaged_cues)
+        # Mid eye top card should be strain or allergy irritation, NOT high-confidence acute red eye
+        assert mid_res[0]['label'] != triage.CARD_VISION_ALERT
+        assert mid_res[0]['label'] in (triage.CARD_ALLERGY, triage.CARD_DIGITAL_STRAIN)
+        # Damaged eye top card should be acute bloodshot red eye
+        assert damaged_res[0]['label'] == triage.CARD_RED_EYE
+        assert damaged_res[0]['confidence'] > 85.0
+
+    def test_assess_with_model_differentiates_mid_and_damaged_eyes(self):
+        """With AI model, mid eye produces Digital Strain while damaged eye produces Red Eye."""
+        mid_cues = {'redness': 0.4269, 'haze': 0.0843}
+        mid_preds = [
+            {'label': 'Myopia', 'confidence': 46.24},
+            {'label': 'Other', 'confidence': 15.46},
+            {'label': 'Normal', 'confidence': 13.00},
+        ]
+        damaged_cues = {'redness': 0.4819, 'haze': 0.0947}
+        damaged_preds = [
+            {'label': 'Other', 'confidence': 35.40},
+            {'label': 'Cataract', 'confidence': 26.93},
+            {'label': 'Normal', 'confidence': 12.76},
+        ]
+        mid_res = triage.assess_with_model([], mid_cues, mid_preds)
+        damaged_res = triage.assess_with_model([], damaged_cues, damaged_preds)
+        assert mid_res[0]['label'] == triage.CARD_DIGITAL_STRAIN
+        assert damaged_res[0]['label'] == triage.CARD_RED_EYE
+        assert damaged_res[0]['confidence'] > 85.0
 
 
 # ═════════════════════════════════════════════════════════════════════════════

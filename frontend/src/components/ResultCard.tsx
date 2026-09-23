@@ -126,7 +126,13 @@ export function ResultCard({
                 marginTop: '0.125rem',
               }}
             >
-              symptom match
+              {prediction.is_healthy
+                ? 'normal'
+                : prediction.source === 'photo_only'
+                  ? 'photo cue'
+                  : prediction.source === 'ai_model'
+                    ? 'AI match'
+                    : 'symptom match'}
             </span>
           ) : (
             <span

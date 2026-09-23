@@ -1,17 +1,61 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECRETS & ENVIRONMENT VARIABLES
+# SECRETS & API CREDENTIALS  ⚠️  NEVER COMMIT THESE
 # ═══════════════════════════════════════════════════════════════════════════════
 .env
 .env.*
 !.env.example
+
+# Firebase service account key
 firebase-credentials.json
 **/firebase-credentials.json
+
+# Kaggle API token (contains username + API key)
+kaggle.json
+**/kaggle.json
+
+# HuggingFace access tokens
+.huggingface/
+huggingface_token.txt
+hf_token.txt
+*.hf_token
+
+# Any generic credentials / secrets dump
+*credentials*.json
+*secret*.json
+*secrets*.json
+*service_account*.json
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODEL CHECKPOINTS & CACHE  (large binary files — download at runtime)
+# ═══════════════════════════════════════════════════════════════════════════════
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.bin
+*.h5
+*.pkl
+__pycache__/
+*.py[cod]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SCRATCH / TEMPORARY WORKING FILES
+# ═══════════════════════════════════════════════════════════════════════════════
+scratch/
+tmp/
+temp/
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PERSONAL TEST IMAGES (uploaded during dev/testing)
+# ═══════════════════════════════════════════════════════════════════════════════
+healthy.jpeg
+*.test.jpg
+*.test.png
+HEALTHTY\ EYE.png
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # BACKEND (Python / Flask)
 # ═══════════════════════════════════════════════════════════════════════════════
-__pycache__/
-*.py[cod]
 .venv/
 venv/
 env/

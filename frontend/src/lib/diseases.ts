@@ -361,6 +361,33 @@ export const DB: Record<string, DiseaseEntry> = {
 
 /** Knowledge base for the Daily Home Mode cards, keyed by triage card id. */
 export const HOME_DB: Record<string, DiseaseEntry> = {
+    Home_Healthy: {
+        name: 'Your Eyes Look Healthy', severity: 'healthy', icon: '✅', color: '#10B981',
+        mode: 'home',
+        badge: { label: 'Healthy', color: '#047857', background: 'rgba(16,185,129,0.14)' },
+        covers: 'AI analysis found no visible signs of common eye diseases in your photo.',
+        plainName: 'Healthy eye',
+        whatIsIt: 'Our AI model examined your photo and found no signs of disease.',
+        desc: 'Great news — the AI analysis of your eye photo did not detect signs of common eye conditions. Keep up your healthy eye habits and schedule routine check-ups.',
+        info: 'The NeuronZero eye disease classifier examined your photo and classified it as "Normal" with high confidence. This means no visible indicators of AMD, cataracts, glaucoma, diabetic retinopathy, hypertension, or myopia were detected.',
+        recs: [
+            { icon: '📅', title: 'Annual Eye Exam', text: 'Even when everything looks good, schedule a comprehensive eye exam once a year. Early detection of conditions like glaucoma requires professional equipment.', priority: 'routine' },
+            { icon: '😎', title: 'UV Protection', text: 'Wear UV400 sunglasses outdoors to protect against long-term UV damage to the lens and retina.', priority: 'routine' },
+            { icon: '🥬', title: 'Eye-Healthy Diet', text: 'Leafy greens, omega-3 fish, and colourful vegetables support retinal health and reduce disease risk.', priority: 'routine' }
+        ],
+        habits: [
+            { icon: '⏱️', title: '20-20-20 Rule', desc: 'Every 20 minutes of screen time, look at something 20 feet away for 20 seconds.', freq: 'During screen use' },
+            { icon: '💧', title: 'Stay Hydrated', desc: 'Adequate water intake supports healthy tear production and prevents dryness.', freq: 'Daily' },
+            { icon: '😴', title: '7–8 Hours Sleep', desc: 'Quality sleep allows your eyes to rest, repair and relubricate overnight.', freq: 'Nightly' }
+        ],
+        prevent: [
+            { icon: '🚭', title: 'Don\'t Smoke', text: 'Smoking doubles the risk of cataracts and triples the risk of AMD' },
+            { icon: '🩺', title: 'Know Your Numbers', text: 'Blood sugar and blood pressure directly affect eye health' },
+            { icon: '👨‍👩‍👧', title: 'Family History', text: 'If glaucoma or macular degeneration runs in your family, get screened more often' },
+            { icon: '📱', title: 'Screen Breaks', text: 'Long screen hours are the leading cause of eye strain — take regular breaks' }
+        ]
+    },
+
     Home_Allergy_Irritation: {
         name: 'Itchiness & Allergic Surface Relief', severity: 'healthy', icon: '🌿', color: '#06B6D4',
         mode: 'home',

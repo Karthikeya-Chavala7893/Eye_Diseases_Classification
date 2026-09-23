@@ -90,6 +90,27 @@ class Config:
     #: Cold-start budget for model download + initialisation (constraint #25).
     MODEL_LOAD_TIMEOUT_SECONDS = int(os.environ.get('MODEL_LOAD_TIMEOUT_SECONDS', '60'))
 
+    # ── Home screening model ─────────────────────────────────────────────────
+    #: Option 1: Use calibrated optical computer vision engine (default, 0 MB, fastest).
+    #: When true, optionally queries the secondary ML classifier.
+    USE_HOME_AI_MODEL = os.environ.get('USE_HOME_AI_MODEL', 'true').lower() == 'true'
+
+    #: HuggingFace model id for the Daily Home Mode image classifier.
+    #: Separate from LOCAL_MODEL_ID so the clinical and home pipelines can be
+    #: configured independently (e.g. swap clinical to a local checkpoint while
+    #: keeping NeuronZero for home).
+    HOME_MODEL_ID = os.environ.get('HOME_MODEL_ID', 'NeuronZero/EyeDiseaseClassifier')
+
+    #: Minimum top-class confidence from the home model to trust as "Normal".
+    #: Below this, the model's output is blended with pixel cues instead of
+    #: producing a definitive "Healthy" result.
+    HOME_MODEL_CONFIDENCE_THRESHOLD = float(
+        os.environ.get('HOME_MODEL_CONFIDENCE_THRESHOLD', '0.40')
+    )
+
+    #: The label the home model emits for a healthy eye.
+    HOME_HEALTHY_LABEL = os.environ.get('HOME_HEALTHY_LABEL', 'Normal')
+
     # ── Upload validation ────────────────────────────────────────────────────
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024          # 16 MB
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'webp'}

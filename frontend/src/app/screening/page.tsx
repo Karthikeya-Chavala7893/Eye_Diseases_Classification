@@ -59,6 +59,8 @@ const INCONCLUSIVE_THRESHOLD = 30;
 /** The home card that must trigger the hospital-escalation banner. */
 const RED_ALERT_CARD = 'Home_Vision_Loss_Alert';
 
+
+
 /**
  * Darken a hex colour by a percentage.
  *
@@ -188,6 +190,9 @@ export default function ScreeningPage(): JSX.Element {
   const collapsedPredictions = predictions.filter((p) => p.confidence < MIN_DISPLAY_CONFIDENCE);
 
   const showEscalation = isHome && top?.label === RED_ALERT_CARD;
+  const isHealthy = isHome && top?.is_healthy === true;
+  const isLowEvidence = isHome && top?.low_evidence === true;
+  const homeModelUsed = isHome && activeResult?.home_model_used === true;
   const canSubmitHome = symptoms.size > 0 || photo !== null;
 
   return (
@@ -281,7 +286,9 @@ export default function ScreeningPage(): JSX.Element {
                   </h3>
                   <p className="loading-text" aria-live="polite">
                     {isHome
-                      ? 'Matching your symptoms against the home triage guide…'
+                      ? (photo
+                          ? 'Running AI analysis on your photo and matching symptoms…'
+                          : 'Matching your symptoms against the home triage guide…')
                       : 'Our AI is examining your retinal image…'}
                   </p>
                   <div className="loading-bar">
@@ -295,17 +302,37 @@ export default function ScreeningPage(): JSX.Element {
                 <div className="results-state" style={{ display: 'block' }}>
                   <div className="results-header">
                     <div className="results-icon" aria-hidden="true">
-                      {isInconclusive ? '🔍' : isHome ? '🏠' : '✨'}
+                      {isInconclusive ? '🔍' : isHealthy ? '✅' : isHome ? '🏠' : '✨'}
                     </div>
                     <h2 className="results-title">
                       {isInconclusive
                         ? 'Inconclusive Result'
-                        : isHome
-                          ? 'Your Home Check'
-                          : 'Analysis Complete'}
+                        : isHealthy
+                          ? 'Your Eyes Look Healthy!'
+                          : isHome
+                            ? 'Your Home Check'
+                            : 'Analysis Complete'}
                     </h2>
                     <p className="results-subtitle">
                       Results for {activeResult.user ?? displayName}
+                      {homeModelUsed && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            marginLeft: '0.5rem',
+                            padding: '0.125rem 0.5rem',
+                            borderRadius: '999px',
+                            background: 'rgba(16,185,129,0.15)',
+                            color: 'var(--emerald-600, #059669)',
+                            fontWeight: 600,
+                            fontSize: '0.7rem',
+                          }}
+                        >
+                          🤖 AI-Assisted
+                        </span>
+                      )}
                     </p>
                   </div>
 
@@ -355,96 +382,134 @@ export default function ScreeningPage(): JSX.Element {
                       </p>
                     </div>
                   ) : (
-                    <div
-                      id="primaryDiagnosis"
-                      className="primary-result"
-                      style={{
-                        background: `linear-gradient(135deg, ${topDisease.color}, ${darken(topDisease.color, 20)})`,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 'var(--space-3)',
-                          marginBottom: 'var(--space-4)',
-                        }}
-                      >
-                        <span style={{ fontSize: '2rem' }} aria-hidden="true">{topDisease.icon}</span>
-                        <div>
-                          <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>
-                            {isHome ? 'Closest Match' : 'Primary Finding'}
-                          </div>
-                          <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{topDisease.name}</div>
-                        </div>
-                      </div>
-                      <p style={{ opacity: 0.9, marginBottom: 'var(--space-4)' }}>{topDisease.desc}</p>
-                      {(() => {
-                        const cInfo = getConfidenceLevel(top.confidence);
-                        return (
-                          <div
-                            style={{
-                              background: 'rgba(255,255,255,0.2)',
-                              borderRadius: 'var(--radius-lg)',
-                              padding: 'var(--space-3)',
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                marginBottom: 'var(--space-2)',
-                                fontSize: '0.875rem',
-                              }}
-                            >
-                              <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                                {isHome ? 'Symptom Match' : 'AI Confidence'}
-                                {!isHome && (
-                                  <span
-                                    style={{
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.25rem',
-                                      padding: '0.125rem 0.5rem',
-                                      borderRadius: '999px',
-                                      background: 'rgba(255,255,255,0.25)',
-                                      color: '#fff',
-                                      fontWeight: 600,
-                                      fontSize: '0.7rem',
-                                    }}
-                                  >
-                                    {cInfo.emoji} {cInfo.level}
-                                  </span>
-                                )}
-                              </span>
-                              <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>{top.confidence.toFixed(1)}%</span>
-                            </div>
-                            <ConfidenceBar
-                              value={top.confidence}
-                              label={
-                                isHome
-                                  ? `${topDisease.name} symptom match`
-                                  : `${topDisease.name} confidence level`
-                              }
-                              showLevel={false}
-                            />
-                            <p
-                              style={{
-                                fontSize: '0.7rem',
-                                opacity: 0.75,
-                                marginTop: '0.5rem',
-                                lineHeight: 1.4,
-                              }}
-                            >
-                              {isHome
-                                ? 'How closely what you described matches this triage card. This is not a medical diagnosis.'
-                                : 'How confident the AI is that this condition matches your retinal image. This is not a medical diagnosis.'}
+                    <>
+                      {/* Low evidence warning for photo-only results */}
+                      {isLowEvidence && (
+                        <div
+                          role="status"
+                          style={{
+                            background: 'linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.06))',
+                            border: '1px solid rgba(245,158,11,0.25)',
+                            borderRadius: 'var(--radius-lg)',
+                            padding: 'var(--space-4)',
+                            marginBottom: 'var(--space-4)',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 'var(--space-3)',
+                          }}
+                        >
+                          <span style={{ fontSize: '1.5rem', flexShrink: 0 }} aria-hidden="true">📷</span>
+                          <div>
+                            <p style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', color: 'var(--amber-700, #b45309)' }}>
+                              Photo Estimate Only
+                            </p>
+                            <p style={{ fontSize: '0.8rem', opacity: 0.85, lineHeight: 1.5 }}>
+                              This result is based on photo analysis only — tick any symptoms you feel for a more accurate and detailed check.
                             </p>
                           </div>
-                        );
-                      })()}
-                    </div>
+                        </div>
+                      )}
+
+                      <div
+                        id="primaryDiagnosis"
+                        className="primary-result"
+                        style={{
+                          background: `linear-gradient(135deg, ${topDisease.color}, ${darken(topDisease.color, 20)})`,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 'var(--space-3)',
+                            marginBottom: 'var(--space-4)',
+                          }}
+                        >
+                          <span style={{ fontSize: '2rem' }} aria-hidden="true">{topDisease.icon}</span>
+                          <div>
+                            <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>
+                              {isHealthy ? 'AI Assessment' : isHome ? 'Closest Match' : 'Primary Finding'}
+                            </div>
+                            <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{topDisease.name}</div>
+                          </div>
+                        </div>
+                        <p style={{ opacity: 0.9, marginBottom: 'var(--space-4)' }}>{topDisease.desc}</p>
+                        {(() => {
+                          const cInfo = getConfidenceLevel(top.confidence);
+                          const confidenceLabel = isHome
+                            ? (top.source === 'ai_model'
+                                ? 'AI + Symptom Score'
+                                : top.source === 'photo_only'
+                                  ? 'Photo Estimate'
+                                  : 'Symptom Match')
+                            : 'AI Confidence';
+                          return (
+                            <div
+                              style={{
+                                background: 'rgba(255,255,255,0.2)',
+                                borderRadius: 'var(--radius-lg)',
+                                padding: 'var(--space-3)',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  marginBottom: 'var(--space-2)',
+                                  fontSize: '0.875rem',
+                                }}
+                              >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                                  {confidenceLabel}
+                                  {!isHome && (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.25rem',
+                                        padding: '0.125rem 0.5rem',
+                                        borderRadius: '999px',
+                                        background: 'rgba(255,255,255,0.25)',
+                                        color: '#fff',
+                                        fontWeight: 600,
+                                        fontSize: '0.7rem',
+                                      }}
+                                    >
+                                      {cInfo.emoji} {cInfo.level}
+                                    </span>
+                                  )}
+                                </span>
+                                <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>{top.confidence.toFixed(1)}%</span>
+                              </div>
+                              <ConfidenceBar
+                                value={top.confidence}
+                                label={
+                                  isHome
+                                    ? `${topDisease.name} ${confidenceLabel.toLowerCase()}`
+                                    : `${topDisease.name} confidence level`
+                                }
+                                showLevel={false}
+                              />
+                              <p
+                                style={{
+                                  fontSize: '0.7rem',
+                                  opacity: 0.75,
+                                  marginTop: '0.5rem',
+                                  lineHeight: 1.4,
+                                }}
+                              >
+                                {isHome
+                                  ? (top.source === 'ai_model'
+                                      ? 'AI model classification combined with any symptoms you reported. This is not a medical diagnosis.'
+                                      : 'How closely what you described matches this triage card. This is not a medical diagnosis.')
+                                  : 'How confident the AI is that this condition matches your retinal image. This is not a medical diagnosis.'}
+                              </p>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </>
                   )}
 
                   {/* Card 5 escalation: hospital first, one-click clinical scan second. */}

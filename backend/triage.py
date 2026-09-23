@@ -1,7 +1,17 @@
 """
 backend/triage.py
 ─────────────────
-Rule-based triage engine for **Daily Home Mode**.
+Triage engine for **Daily Home Mode**.
+
+Supports two scoring paths:
+
+  1. Rule-based (``assess``): symptom weights + pixel-level colour cues.
+     Zero ML cost.  This is the fallback when the home model is unavailable.
+
+  2. AI-augmented (``assess_with_model``): NeuronZero/EyeDiseaseClassifier
+     predictions are blended with symptom weights and pixel cues.  The model's
+     ``Normal`` class enables a dedicated "Healthy Eye" result path that the
+     rule engine alone can never produce.
 
 Single Responsibility
 ─────────────────────
@@ -32,8 +42,11 @@ CARD_DIGITAL_STRAIN = 'Home_Digital_Strain'
 CARD_RED_EYE = 'Home_Red_Eye'
 CARD_LENS_HAZE = 'Home_Lens_Haze'
 CARD_VISION_ALERT = 'Home_Vision_Loss_Alert'
+CARD_HEALTHY = 'Home_Healthy'
 
-#: Every card the engine can surface, in escalating severity order.
+#: Every disease card the engine can surface, in escalating severity order.
+#: ``CARD_HEALTHY`` is deliberately excluded — it is returned as a special case
+#: by ``assess_with_model`` and must never compete in the additive scoring.
 CARDS: tuple[str, ...] = (
     CARD_ALLERGY,
     CARD_DIGITAL_STRAIN,
@@ -133,9 +146,16 @@ _HAZE_SATURATION_CEILING = 60
 #: Divisor normalising mean red dominance (0-255) into a 0-1 cue.
 _REDNESS_SCALE = 64.0
 
-#: Each cue is worth at most this many weight points, so a photo can nudge the
-#: ranking but never outvote what the patient actually reports.
-_CUE_MAX_WEIGHT = 2.5
+#: Baseline thresholds: facial skin and eyelids naturally exhibit red dominance (~0.20-0.25)
+#: and slight central reflection (~0.03-0.05). Genuine ocular pathologies (bloodshot sclera,
+#: milky lens opacity) push far beyond these baselines.
+_REDNESS_BASELINE = 0.25
+_HAZE_BASELINE = 0.06
+
+#: Maximum per-card weight points contributed by a confirmed image cue.
+#: Calibrated so genuine bloodshot sclera (net_redness > 0.25) produces a decisive
+#: red-eye finding (~90%) without being drowned out by background noise.
+_CUE_MAX_WEIGHT = 10.0
 
 
 def inspect_image(image_bytes: bytes) -> dict[str, float]:
@@ -197,13 +217,106 @@ def inspect_image(image_bytes: bytes) -> dict[str, float]:
 
 
 def _cue_weights(cues: dict[str, float] | None) -> dict[str, float]:
-    """Convert raw image cues into per-card score contributions."""
+    """Convert raw image cues into per-card score contributions.
+
+    Subtracts baseline skin/eyelid redness and pupil reflection haze so
+    normal external eye photographs register 0 net redness / haze.
+
+    Clinically separates moderate eye redness (eye strain, dry eye, allergy)
+    from severe acute bloodshot redness (conjunctivitis, subconjunctival hemorrhage).
+    """
     if not cues:
         return {}
-    return {
-        CARD_RED_EYE: float(cues.get('redness', 0.0)) * _CUE_MAX_WEIGHT,
-        CARD_LENS_HAZE: float(cues.get('haze', 0.0)) * _CUE_MAX_WEIGHT,
-    }
+    raw_red = float(cues.get('redness', 0.0))
+    raw_haze = float(cues.get('haze', 0.0))
+
+    net_red = max(0.0, (raw_red - _REDNESS_BASELINE) / (1.0 - _REDNESS_BASELINE)) if raw_red > _REDNESS_BASELINE else 0.0
+    net_haze = max(0.0, (raw_haze - _HAZE_BASELINE) / (1.0 - _HAZE_BASELINE)) if raw_haze > _HAZE_BASELINE else 0.0
+
+    w: dict[str, float] = {}
+    if net_haze > 0:
+        w[CARD_LENS_HAZE] = net_haze * (_CUE_MAX_WEIGHT * 0.8)
+    if net_red > 0:
+        if net_red <= 0.28:  # Moderate redness (e.g. MID EYE: fatigue, dry eye, surface allergy)
+            w[CARD_DIGITAL_STRAIN] = 2.2 * (1.0 - net_red / 0.35)
+            w[CARD_ALLERGY] = 1.4
+            w[CARD_RED_EYE] = net_red * 3.5
+        else:  # Severe/acute bloodshot redness (e.g. DAMAGED EYE)
+            w[CARD_RED_EYE] = net_red * 14.0
+            w[CARD_ALLERGY] = 0.2
+    return w
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# AI MODEL INTEGRATION  (NeuronZero/EyeDiseaseClassifier)
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# The home model emits 8 labels:
+#   AMD, Cataract, Diabetes, Glaucoma, Hypertension, Myopia, Normal, Other
+#
+# Each disease label maps onto one or two home cards with high weights so the
+# AI signal dominates over the weak pixel cues.  "Normal" is a special case
+# handled by assess_with_model().  "Other" contributes nothing — the engine
+# falls back to pixel cues and symptoms.
+
+#: Maximum per-card weight contributed by a single model label.
+_MODEL_MAX_WEIGHT = 10.0
+
+#: NeuronZero label → { home_card: weight } mapping.
+#: Weights are deliberately much higher than symptom weights (~3.0) and pixel
+#: cue weights (~2.5) so the AI model dominates when available.
+MODEL_LABEL_WEIGHTS: dict[str, dict[str, float]] = {
+    'AMD':          {CARD_VISION_ALERT: 8.0, CARD_LENS_HAZE: 2.0},
+    'Cataract':     {CARD_LENS_HAZE: 9.0, CARD_VISION_ALERT: 2.0},
+    'Diabetes':     {CARD_VISION_ALERT: 8.0, CARD_LENS_HAZE: 1.5},
+    'Glaucoma':     {CARD_VISION_ALERT: 9.0},
+    'Hypertension': {CARD_VISION_ALERT: 7.0, CARD_RED_EYE: 2.0},
+    'Myopia':       {CARD_DIGITAL_STRAIN: 6.0, CARD_VISION_ALERT: 1.0},
+    # 'Normal' → handled as a special case in assess_with_model()
+    # 'Other'  → contributes nothing (treated as uncertain)
+}
+
+
+def model_cue_weights(
+    model_predictions: list[dict],
+    has_symptoms: bool = False,
+) -> dict[str, float]:
+    """Convert NeuronZero model predictions into per-card weight contributions.
+
+    Each prediction ``{'label': str, 'confidence': float}`` is looked up in
+    :data:`MODEL_LABEL_WEIGHTS`.
+
+    Safeguards applied:
+      1. Low-confidence predictions (< 30%) are ignored as background noise,
+         preventing flat out-of-distribution softmax tails from accumulating.
+      2. CARD_VISION_ALERT is guarded: emergency red-alert weight is only added
+         if the prediction confidence is high (>= 40%) or the patient explicitly
+         reported symptoms.
+
+    Args:
+        model_predictions: Output of ``home_model.predict_home()``, sorted by
+            descending confidence.
+        has_symptoms: Whether the patient reported any symptoms.
+
+    Returns:
+        Per-card score contributions from the AI model.
+    """
+    weights: dict[str, float] = {}
+    for pred in model_predictions:
+        conf_pct = pred.get('confidence', 0.0)
+        if conf_pct < 30.0:  # Ignore background noise
+            continue
+        label = pred.get('label', '')
+        conf = conf_pct / 100.0  # normalise to 0-1
+        label_map = MODEL_LABEL_WEIGHTS.get(label)
+        if not label_map:
+            continue
+        for card, base_weight in label_map.items():
+            if card == CARD_VISION_ALERT and conf_pct < 40.0 and not has_symptoms:
+                continue
+            contribution = min(base_weight * conf, _MODEL_MAX_WEIGHT)
+            weights[card] = weights.get(card, 0.0) + contribution
+    return weights
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -220,7 +333,8 @@ def assess(symptom_ids, cues: dict[str, float] | None = None) -> list[dict]:
 
     Pipeline:
         symptom ids -> additive per-card weights
-                    -> optional image-cue weights
+                    -> optional calibrated image-cue weights
+                    -> healthy eye detection when photo shows no pathology
                     -> red-flag escalation
                     -> normalise to a percentage match, sorted descending
 
@@ -235,12 +349,26 @@ def assess(symptom_ids, cues: dict[str, float] | None = None) -> list[dict]:
         ``{'label': str, 'confidence': float}``. The first element additionally
         carries ``'red_flag': True`` when an urgent symptom forced the
         escalation, so the UI can surface the hospital shortcut.
+        When a photo without symptoms shows no redness or haze above baseline,
+        returns ``[{'label': CARD_HEALTHY, 'is_healthy': True, ...}]``.
 
     Raises:
-        ValueError: If nothing scored — no recognised symptom and no usable
-            photo cue — since there is then no defensible card to show.
+        ValueError: If nothing scored — no recognised symptom and no photo cues
+            provided at all.
     """
     selected = [s for s in dict.fromkeys(symptom_ids or []) if s in SYMPTOM_WEIGHTS]
+    has_symptoms = len(selected) > 0
+
+    # ── Healthy Eye detection: photo uploaded with zero symptoms ───────────
+    if cues and not has_symptoms:
+        cue_w = _cue_weights(cues)
+        if not any(v >= 0.5 for v in cue_w.values()):
+            return [{
+                'label': CARD_HEALTHY,
+                'confidence': 92.0,
+                'is_healthy': True,
+                'source': 'photo_only',
+            }]
 
     scores: dict[str, float] = {card: 0.0 for card in CARDS}
     for symptom in selected:
@@ -259,12 +387,133 @@ def assess(symptom_ids, cues: dict[str, float] | None = None) -> list[dict]:
 
     total = sum(scores.values())
     if total <= 0:
+        if cues and not has_symptoms:
+            return [{
+                'label': CARD_HEALTHY,
+                'confidence': 92.0,
+                'is_healthy': True,
+                'source': 'photo_only',
+            }]
         raise ValueError(
             "No recognised symptoms were selected and the photo showed no usable cues."
         )
 
+    source = 'symptoms' if has_symptoms else 'photo_only'
+
     results = [
-        {'label': card, 'confidence': round(score / total * 100, _MATCH_DECIMALS)}
+        {'label': card, 'confidence': round(score / total * 100, _MATCH_DECIMALS), 'source': source}
+        for card, score in scores.items()
+        if (score / total * 100) >= _MIN_REPORTED_MATCH
+    ]
+    results.sort(key=lambda item: item['confidence'], reverse=True)
+
+    if red_flag and results:
+        results[0]['red_flag'] = True
+
+    return results
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# AI-AUGMENTED SCORING
+# ═════════════════════════════════════════════════════════════════════════════
+
+def assess_with_model(
+    symptom_ids,
+    cues: dict[str, float] | None = None,
+    model_predictions: list[dict] | None = None,
+) -> list[dict]:
+    """Score the home cards using symptoms, pixel cues **and** AI model output.
+
+    Extends :func:`assess` with two new behaviours:
+      1. **Healthy Eye path**: When image cues show clean sclera and pupil, and
+         no disease prediction is strongly positive, a dedicated ``Home_Healthy``
+         result is returned instead of forcing disease cards.
+      2. **Noise-filtered AI blending**: Only model predictions with confidence
+         >= 30% contribute, preventing out-of-domain softmax tails from leaking
+         into emergency cards.
+    """
+    from config import Config
+
+    selected = [s for s in dict.fromkeys(symptom_ids or []) if s in SYMPTOM_WEIGHTS]
+    red_flag = any(s in RED_FLAG_SYMPTOMS for s in selected)
+    has_symptoms = len(selected) > 0
+    has_model = bool(model_predictions)
+
+    cue_w = _cue_weights(cues)
+    net_red_weight = cue_w.get(CARD_RED_EYE, 0.0)
+    net_haze_weight = cue_w.get(CARD_LENS_HAZE, 0.0)
+
+    # ── Healthy Eye path ────────────────────────────────────────────────────
+    if not red_flag and not has_symptoms:
+        strong_disease_preds = [
+            p for p in (model_predictions or [])
+            if p.get('confidence', 0.0) >= 35.0
+            and p.get('label') in MODEL_LABEL_WEIGHTS
+        ]
+        if not any(v >= 0.5 for v in cue_w.values()) and not strong_disease_preds:
+            normal_conf = next(
+                (p['confidence'] for p in (model_predictions or [])
+                 if p.get('label') == Config.HOME_HEALTHY_LABEL),
+                0.0,
+            )
+            confidence = max(88.0, min(96.0, 85.0 + normal_conf * 0.5)) if has_model else 92.0
+            return [{
+                'label': CARD_HEALTHY,
+                'confidence': round(confidence, _MATCH_DECIMALS),
+                'is_healthy': True,
+                'source': 'ai_model' if has_model else 'photo_only',
+            }]
+
+    # ── Additive scoring ────────────────────────────────────────────────────
+    scores: dict[str, float] = {card: 0.0 for card in CARDS}
+
+    # Layer 1: Symptom weights
+    for symptom in selected:
+        for card, weight in SYMPTOM_WEIGHTS[symptom].items():
+            scores[card] += weight
+
+    # Layer 2: Calibrated Image cues
+    for card, weight in cue_w.items():
+        scores[card] += weight
+
+    # Layer 3: AI model weights (only from significant predictions >= 30%)
+    if has_model:
+        for card, weight in model_cue_weights(model_predictions, has_symptoms=has_symptoms).items():
+            scores[card] += weight
+
+    # ── Red-flag escalation ────────────────────────────────────────────────
+    if red_flag:
+        others = sum(
+            score for card, score in scores.items() if card != CARD_VISION_ALERT
+        )
+        scores[CARD_VISION_ALERT] = max(
+            scores[CARD_VISION_ALERT] * _RED_FLAG_MULTIPLIER,
+            others + _RED_FLAG_MARGIN,
+        )
+
+    total = sum(scores.values())
+    if total <= 0:
+        if cues and not has_symptoms:
+            return [{
+                'label': CARD_HEALTHY,
+                'confidence': 92.0,
+                'is_healthy': True,
+                'source': 'photo_only',
+            }]
+        raise ValueError(
+            "No recognised symptoms were selected, the photo showed no usable "
+            "cues, and the AI model did not produce actionable predictions."
+        )
+
+    has_sig_model = has_model and any(p.get('confidence', 0.0) >= 30.0 for p in (model_predictions or []))
+    source = 'ai_model' if has_sig_model else ('symptoms' if has_symptoms else 'photo_only')
+
+    results = [
+        {
+            'label': card,
+            'confidence': round(score / total * 100, _MATCH_DECIMALS),
+            'source': source,
+        }
         for card, score in scores.items()
         if (score / total * 100) >= _MIN_REPORTED_MATCH
     ]

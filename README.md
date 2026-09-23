@@ -372,10 +372,12 @@ Eye_Diseases_Classification/
 │
 ├── backend/                                   # Python Flask REST API & AI Service
 │   ├── app.py                                 # Main Flask WSGI app, routes & mode dispatcher (/api/predict)
+│   ├── home_model.py                          # BEiT home screening model loader & inference pipeline
 │   ├── triage.py                              # Daily Home Mode rule engine (25 symptoms + PIL color cues)
 │   ├── model.py                               # RETFound ViT-Large/16 loader & PyTorch inference pipeline
 │   ├── auth.py                                # @require_auth decorator with RS256 Firebase JWT verification
 │   ├── db.py                                  # Google Cloud Firestore CRUD & audit logging helpers
+│   ├── build_pdf.py                           # Server-side PDF report synthesis utility
 │   ├── config.py                              # 12-factor environment loader & startup validation checks
 │   ├── promote_admin.py                       # CLI script to grant admin custom claims to specified emails
 │   ├── requirements.txt                       # Pinned backend Python dependencies
@@ -457,20 +459,26 @@ Eye_Diseases_Classification/
 │           ├── prediction.ts                  # ScreeningMode, PredictionResult, DiseaseEntry interfaces
 │           └── user.ts                        # User profile, role & scan history record types
 │
-├── sample_fundus_tests/                       # 27 curated clinical test images for validation
-│   ├── Bilateral_OD_Normal_01/02.jpg          # Right eye (OD) healthy retina
-│   ├── Bilateral_OS_Normal_01/02.jpg          # Left eye (OS) healthy retina bilateral pair
-│   ├── Bilateral_OD_DiabeticRetinopathy_01/02 # Right eye with microaneurysms & exudates
-│   ├── Bilateral_OS_DiabeticRetinopathy_01/02 # Left eye diabetic retinopathy bilateral pair
-│   ├── Bilateral_OD_Glaucoma_01/02.jpg        # Right eye enlarged optic cup-to-disc ratio
-│   ├── Bilateral_OS_Glaucoma_01/02.jpg        # Left eye glaucoma bilateral pair
-│   ├── Bilateral_OD_Cataract_01.jpg           # Right eye with media opacity & haziness
-│   ├── Bilateral_OS_Cataract_01.jpg           # Left eye cataract bilateral pair
-│   ├── Cataract_Test_1/2.jpg                  # Color cataract clinical samples
-│   ├── DiabRet_Test_3/4.jpg                   # Color diabetic retinopathy test samples
-│   ├── Glaucoma_Test_1/2.jpg                  # Color glaucomatous cupping test samples
-│   ├── Normal_Retina_Test_4/5.jpg             # Color normal retina test samples
-│   └── Diabetic_Signs_Test_1/2.jpg            # Original microaneurysm validation images
+├── Test images/                               # Test images for dual-mode validation
+│   ├── Home Screen Images/                    # External eye images for Home Screening Mode
+│   │   ├── Damaged Eye.png                    # Surface injury / diseased eye test photo
+│   │   ├── healthy.jpeg                       # Normal healthy eye reference photo
+│   │   └── mid range eye.jpeg                 # Moderate ocular condition test photo
+│   │
+│   └── sample_fundus_tests/                   # 27 curated clinical test images for validation
+│       ├── Bilateral_OD_Normal_01/02.jpg      # Right eye (OD) healthy retina
+│       ├── Bilateral_OS_Normal_01/02.jpg      # Left eye (OS) healthy retina bilateral pair
+│       ├── Bilateral_OD_DiabeticRetinopathy_01/02 # Right eye with microaneurysms & exudates
+│       ├── Bilateral_OS_DiabeticRetinopathy_01/02 # Left eye diabetic retinopathy bilateral pair
+│       ├── Bilateral_OD_Glaucoma_01/02.jpg    # Right eye enlarged optic cup-to-disc ratio
+│       ├── Bilateral_OS_Glaucoma_01/02.jpg    # Left eye glaucoma bilateral pair
+│       ├── Bilateral_OD_Cataract_01.jpg       # Right eye with media opacity & haziness
+│       ├── Bilateral_OS_Cataract_01.jpg       # Left eye cataract bilateral pair
+│       ├── Cataract_Test_1/2.jpg              # Color cataract clinical samples
+│       ├── DiabRet_Test_3/4.jpg               # Color diabetic retinopathy test samples
+│       ├── Glaucoma_Test_1/2.jpg              # Color glaucomatous cupping test samples
+│       ├── Normal_Retina_Test_4/5.jpg         # Color normal retina test samples
+│       └── Diabetic_Signs_Test_1/2.jpg            # Original microaneurysm validation images
 │
 ├── assets/                                    # Media assets & infographics
 │   ├── hero_banner.jpg                        # Platform overview banner graphic

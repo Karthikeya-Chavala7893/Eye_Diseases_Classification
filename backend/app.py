@@ -55,7 +55,7 @@ logger = logging.getLogger('visionai.api')
 #: URL namespace for every route (constraint #18).
 API_PREFIX = '/api'
 
-#: Clinical RETFound scan of a fundus/OCT image — the original behaviour.
+#: Clinical ensemble scan of a fundus image — EfficientNetB3 + DenseNet121 + InceptionResNetV2.
 MODE_CLINICAL = 'clinical'
 
 #: Daily Home Mode: smartphone photo + symptom checklist, scored by triage.py.
@@ -319,9 +319,9 @@ def predict():
 
     Mode routing (dual-mode gateway):
 
-      * ``clinical`` (default) — an uploaded retinal fundus/OCT image is read
-        into memory, classified by the RETFound model, hashed and discarded.
-        Behaviour is byte-for-byte the original single-mode implementation.
+      * ``clinical`` (default) — an uploaded retinal fundus image is read
+        into memory, classified by the ensemble classifier, hashed and discarded.
+        Uses soft-voting across EfficientNetB3, DenseNet121 and InceptionResNetV2.
       * ``home`` — a symptom checklist, optionally accompanied by a smartphone
         photo, is scored by the rule engine in ``triage.py``. The AI model is
         never touched, so this path stays available even while the model is
@@ -364,7 +364,7 @@ def predict():
 
 
 def _screen_clinical(image_bytes: bytes):
-    """Classify a retinal image with the RETFound model. See :func:`predict`."""
+    """Classify a retinal image with the ensemble classifier. See :func:`predict`."""
     if not model.is_loaded():
         return fail('AI model unavailable', 503)
 

@@ -35,6 +35,8 @@ hf_token.txt
 *.bin
 *.h5
 *.pkl
+models/
+backend/models/
 __pycache__/
 *.py[cod]
 

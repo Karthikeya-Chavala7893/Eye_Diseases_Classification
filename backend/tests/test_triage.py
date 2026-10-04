@@ -351,7 +351,7 @@ class TestHomeModeEndpoint:
     def test_home_mode_works_while_the_ai_model_is_unloaded(
         self, client, mock_verify_token, mock_db, auth_headers
     ):
-        """Home Mode must not depend on RETFound being warm."""
+        """Home Mode must not depend on the clinical model being warm."""
         res = client.post(PREDICT_URL, data=_home_form(['itching']),
                           content_type='multipart/form-data', headers=auth_headers)
         assert res.status_code == 200

@@ -158,15 +158,15 @@ class TestPredict:
                 model_module.predict(_png())
 
     def test_predict_uses_the_configured_model_id(self):
-        # Verify the model ID is set to the fine-tuned RETFound model (not the old EfficientNetB0).
+        # Verify the model ID is set to the ensemble classifier (not the old baselines).
         # Accepts either the HuggingFace repo ID or a local path pointing to the cached weights.
         model_id = Config.LOCAL_MODEL_ID
         assert model_id, "LOCAL_MODEL_ID must not be empty"
         assert 'NeuronZero' not in model_id, (
             "Model ID still points to the old EfficientNetB0 baseline — "
-            "update LOCAL_MODEL_ID to the fine-tuned RETFound model."
+            "update LOCAL_MODEL_ID to the ensemble classifier."
         )
-        # Confirm it references the RETFound fine-tuned checkpoint
-        assert 'retfound' in model_id.lower() or 'Karthikeya' in model_id, (
-            f"Expected a RETFound checkpoint, got: {model_id}"
+        # Confirm it references the ensemble fine-tuned checkpoint
+        assert 'ensemble' in model_id.lower() or 'Karthikeya' in model_id, (
+            f"Expected an ensemble checkpoint, got: {model_id}"
         )

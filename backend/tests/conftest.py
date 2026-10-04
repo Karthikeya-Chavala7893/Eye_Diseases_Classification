@@ -36,7 +36,7 @@ os.environ['FIREBASE_CREDENTIALS_PATH'] = 'firebase-credentials.json'
 os.environ['FIREBASE_STORAGE_BUCKET'] = 'test-bucket.appspot.com'
 os.environ['ALLOWED_ORIGINS'] = 'http://localhost:3000'
 os.environ['CHECK_TOKEN_REVOKED'] = 'false'
-os.environ['LOCAL_MODEL_ID'] = 'mock-retfound-model'
+os.environ['LOCAL_MODEL_ID'] = 'mock-ensemble-model'
 
 #: Class labels the mocked classifier reports.
 MOCK_LABELS = {0: 'Healthy_Retina', 1: 'Glaucoma', 2: 'Cataract'}

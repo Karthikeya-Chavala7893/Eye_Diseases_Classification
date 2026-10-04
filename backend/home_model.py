@@ -20,7 +20,7 @@ Design constraints:
 
 Separation from ``model.py``
 ─────────────────────────────
-``model.py`` owns the clinical RETFound pipeline and must not be modified.
+``model.py`` owns the clinical ensemble pipeline and must not be modified.
 If the clinical model happens to be the same HuggingFace checkpoint as the
 home model (common during development), both modules load independently —
 they share no state.  This isolation protects the clinical pipeline from

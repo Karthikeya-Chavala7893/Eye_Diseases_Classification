@@ -5,10 +5,10 @@
 ### Dual AI-Powered Retinal Screening & Daily Home Eye Check Gateway
 
 [![Author](https://img.shields.io/badge/Author-Karthikeya%20Chavala-0284C7?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Karthikeya-Chavala7893)
-[![Clinical Model](https://img.shields.io/badge/Clinical%20AI-RETFound%20ViT--Large-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white)](https://huggingface.co/Karthikeya-Chavala7893/retfound-visionai)
+[![Clinical Model](https://img.shields.io/badge/Clinical%20AI-Ensemble%20CNN%20Classifier-8B5CF6?style=for-the-badge&logo=pytorch&logoColor=white)](https://github.com/Karthikeya-Chavala7893/Eye_Diseases_Classification)
 [![Home Model](https://img.shields.io/badge/Home%20AI-NeuronZero%20BEiT-06B6D4?style=for-the-badge&logo=huggingface&logoColor=white)](https://huggingface.co/NeuronZero/EyeDiseaseClassifier)
-[![Accuracy](https://img.shields.io/badge/Clinical%20Accuracy-92.77%25-10B981?style=for-the-badge&logo=target&logoColor=white)](#-9-how-the-ai-models-classify-diseases--image-requirements)
-[![Scientific Paper](https://img.shields.io/badge/Nature%20(2023)-Peer--Reviewed-FF6B6B?style=for-the-badge&logo=nature&logoColor=white)](https://doi.org/10.1038/s41586-023-06555-x)
+[![Accuracy](https://img.shields.io/badge/Clinical%20Accuracy-95.42%25-10B981?style=for-the-badge&logo=target&logoColor=white)](#-9-how-the-ai-models-classify-diseases--image-requirements)
+[![Architecture](https://img.shields.io/badge/EfficientNetB3%20+%20DenseNet121%20+%20InceptionResNetV2-Ensemble-FF6B6B?style=for-the-badge&logo=pytorch&logoColor=white)](https://github.com/Karthikeya-Chavala7893/Eye_Diseases_Classification)
 [![Tests](https://img.shields.io/badge/Tests-161%20Passing%20(100%25)-10B981?style=for-the-badge&logo=pytest&logoColor=white)](#-15-testing--quality-assurance)
 [![Next.js](https://img.shields.io/badge/Next.js-14%20App%20Router-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![Flask](https://img.shields.io/badge/Flask-REST%20API-000000?style=for-the-badge&logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
@@ -27,9 +27,9 @@
 1. **🏠 Daily Home Eye Check (Model 2 — `NeuronZero/EyeDiseaseClassifier`)**:
    - **Image Input**: **Normal Eye / Smartphone Camera Images** (external eye photos).
    - **Purpose**: Fast home self-check combining a 25-symptom checklist with BEiT transformer image classification.
-2. **🏥 Clinical Retinal Scan (Model 1 — `retfound-visionai`)**:
-   - **Image Input**: **Retinal Fundus Camera Images / OCT Scans** (interior back of the eye).
-   - **Purpose**: Deep clinical-grade AI diagnosis powered by the **RETFound Vision Transformer (ViT-Large/16)** with **92.77% clinical accuracy**.
+2. **🏥 Clinical Retinal Scan (Model 1 — Ensemble Classifier)**:
+   - **Image Input**: **Retinal Fundus Camera Images** (interior back of the eye).
+   - **Purpose**: Deep clinical-grade AI diagnosis powered by a **3-Model CNN Ensemble (EfficientNetB3 + DenseNet121 + InceptionResNetV2)** with **95.42% clinical accuracy**.
 
 ---
 
@@ -55,7 +55,7 @@
 
 | Aspect | Traditional Healthcare System | VisionAI Platform Solution |
 |---|---|---|
-| **Image Compatibility** | General AI tools mix up external eye photos with retinal scans, causing false diagnoses. | **Dual-Engine Routing**: **Normal Eye Images** ➔ Home Model (`NeuronZero`), **Fundus Images** ➔ Clinical Model (`RETFound`). |
+| **Image Compatibility** | General AI tools mix up external eye photos with retinal scans, causing false diagnoses. | **Dual-Engine Routing**: **Normal Eye Images** ➔ Home Model (`NeuronZero`), **Fundus Images** ➔ Clinical Model (Ensemble Classifier). |
 | **Early Detection** | Retinal diseases show **no early symptoms or pain**. | **Clinical AI spots microaneurysms** on fundus scans before vision loss begins. |
 | **Cost** | Hospital exams cost ₹1,500 – ₹3,000 per consultation. | **100% Free** online home screening and AI second opinions. |
 | **Access & Travel** | 1 eye specialist per 250,000 rural residents; requires long travel. | **Instant web-based access** from any mobile phone or browser. |
@@ -374,7 +374,7 @@ Eye_Diseases_Classification/
 │   ├── app.py                                 # Main Flask WSGI app, routes & mode dispatcher (/api/predict)
 │   ├── home_model.py                          # BEiT home screening model loader & inference pipeline
 │   ├── triage.py                              # Daily Home Mode rule engine (25 symptoms + PIL color cues)
-│   ├── model.py                               # RETFound ViT-Large/16 loader & PyTorch inference pipeline
+│   ├── model.py                               # Ensemble CNN classifier loader & PyTorch inference pipeline
 │   ├── auth.py                                # @require_auth decorator with RS256 Firebase JWT verification
 │   ├── db.py                                  # Google Cloud Firestore CRUD & audit logging helpers
 │   ├── build_pdf.py                           # Server-side PDF report synthesis utility
@@ -386,7 +386,7 @@ Eye_Diseases_Classification/
 │       ├── conftest.py                        # Shared pytest fixtures, mock JWTs & dummy images
 │       ├── test_auth.py                       # JWT verification, token expiration & revocation tests
 │       ├── test_db.py                         # Firestore CRUD, scan pagination bounds & sanitization tests
-│       ├── test_model.py                      # RETFound loader, ViT tensor shapes & decompression bomb tests
+│       ├── test_model.py                      # Ensemble classifier loader, tensor shapes & decompression bomb tests
 │       ├── test_predict.py                    # Dual-mode predict endpoint contracts & rate limit tests
 │       ├── test_triage.py                     # Home Mode rule engine scoring & red-flag escalation tests
 │       └── static_analysis.py                 # Code quality, AST imports & architectural boundary checks
@@ -523,7 +523,7 @@ pytest backend/tests
 |---|---|---|
 | `backend/tests/test_auth.py` | JWT token validation, expiry checks, signature verification | ✅ 100% Passing |
 | `backend/tests/test_db.py` | Firestore CRUD, scan pagination bounds, data sanitization | ✅ 100% Passing |
-| `backend/tests/test_model.py` | RETFound model loading, ViT tensor shapes, decompression bomb guards | ✅ 100% Passing |
+| `backend/tests/test_model.py` | Ensemble model loading, tensor shapes, decompression bomb guards | ✅ 100% Passing |
 | `backend/tests/test_predict.py` | Dual-mode prediction contracts, rate limits, error headers | ✅ 100% Passing |
 | `legacy/tests/` | Baseline regressions & legacy authentication compatibility | ✅ 100% Passing |
 | **Total Test Coverage** | **161 / 161 Automated Test Cases** | **✅ All Passing** |
@@ -554,7 +554,7 @@ cp .env.example .env
 python app.py
 ```
 > 🟢 **Backend running at:** `http://127.0.0.1:5000` — Health check: `GET /api/health`  
-> ℹ️ **Dependencies Note**: `backend/requirements.txt` installs `torch`, `torchvision`, `transformers`, and `timm` (required by the RETFound ViT-Large backbone). Python 3.10 or 3.11 is recommended.
+> ℹ️ **Dependencies Note**: `backend/requirements.txt` installs `torch`, `torchvision`, `transformers`, and `timm` (required by the Ensemble CNN classifier). Python 3.10 or 3.11 is recommended.
 
 ### Step 3: Set Up Frontend
 Open a separate terminal window:
@@ -577,7 +577,7 @@ npm run dev
 | `PORT` | Optional | `5000` | Port for the Flask WSGI REST API server. |
 | `ALLOWED_ORIGINS` | **Required** | `http://localhost:3000,http://127.0.0.1:3000` | Comma-delimited CORS origin whitelist. Wildcard `*` causes server boot failure. |
 | `FIREBASE_CREDENTIALS_PATH` | **Required** | `firebase-credentials.json` | Path to Google Cloud Firebase Admin SDK service account credentials. |
-| `LOCAL_MODEL_ID` | Optional | `C:/Users/.../.cache/huggingface/retfound-visionai` | Local path or HuggingFace ID for RETFound weights (`retfound_classifier.pth`). |
+| `LOCAL_MODEL_ID` | Optional | `models/ensemble_classifier.pth` | Local path for ensemble classifier weights (`ensemble_classifier.pth`). |
 | `TORCH_DEVICE` | Optional | `cpu` (or `cuda`) | Inference compute device (`cuda` if NVIDIA GPU is present, otherwise `cpu`). |
 | `MAX_CONTENT_LENGTH` | Optional | `16777216` (16 MB) | Maximum permitted HTTP payload size (rejects files > 16 MB with HTTP 413). |
 | `RATELIMIT_DEFAULT` | Optional | `60 per minute` | Default global IP rate limit. |

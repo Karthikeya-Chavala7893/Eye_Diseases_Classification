@@ -1,7 +1,7 @@
 """
 backend/model.py
 ────────────────
-VisionAI inference engine supporting RETFound (ViT-Large/16) and HuggingFace AutoModels.
+VisionAI inference engine supporting Ensemble CNN classifiers and HuggingFace AutoModels.
 
 Single Responsibility
 ─────────────────────
@@ -26,6 +26,7 @@ import numpy as np
 import timm
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
 from transformers import AutoImageProcessor, AutoModelForImageClassification
@@ -48,46 +49,94 @@ _CONFIDENCE_DECIMALS = 2
 #: Softmax is applied over the final logits axis.
 _LOGITS_AXIS = -1
 
-#: Standard RETFound inference transform (resize 224x224, ImageNet normalisation).
-_RETFOUND_TRANSFORM = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+#: ImageNet normalisation constants used by all ensemble models.
+_IMAGENET_MEAN = [0.485, 0.456, 0.406]
+_IMAGENET_STD = [0.229, 0.224, 0.225]
 
 
-class RETFoundClassifier(nn.Module):
-    """RETFound ViT-Large backbone with multi-layer classification head."""
+# ═══════════════════════════════════════════════════════════════════════════════
+# ENSEMBLE MODEL WRAPPER
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    def __init__(self, backbone: nn.Module, num_classes: int = 4, dropout: float = 0.3):
+class EnsembleClassifier(nn.Module):
+    """Soft-voting ensemble of multiple timm classifiers.
+
+    Each sub-model is independently loaded from the checkpoint, given its own
+    resolution-specific transform, and run in parallel during inference.
+    The final prediction is the average of all sub-model softmax outputs.
+    """
+
+    def __init__(self):
         super().__init__()
-        self.backbone = backbone
-        embed_dim = getattr(backbone, 'embed_dim', 1024)
-        self.classifier = nn.Sequential(
-            nn.LayerNorm(embed_dim),
-            nn.Dropout(dropout),
-            nn.Linear(embed_dim, 512),
-            nn.GELU(),
-            nn.Dropout(dropout / 2),
-            nn.Linear(512, num_classes),
-        )
+        self.models = nn.ModuleDict()
+        self.img_sizes: dict[str, int] = {}
+        self.transforms: dict[str, transforms.Compose] = {}
+
+    def add_model(self, name: str, model: nn.Module, img_size: int) -> None:
+        """Register a sub-model with its name and input resolution."""
+        self.models[name] = model
+        self.img_sizes[name] = img_size
+        self.transforms[name] = transforms.Compose([
+            transforms.Resize((img_size, img_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=_IMAGENET_MEAN, std=_IMAGENET_STD),
+        ])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        features = self.backbone.forward_features(x)
-        cls_token = features[:, 0, :]
-        return self.classifier(cls_token)
+        """Not used directly — inference goes through predict_ensemble()."""
+        raise NotImplementedError("Use predict_ensemble() for multi-resolution input")
+
+    def predict_ensemble(self, image: Image.Image, device: torch.device) -> torch.Tensor:
+        """Run all sub-models on a single PIL image and return averaged logits.
+
+        Each model preprocesses the image at its own resolution, runs a forward
+        pass, and contributes equally to the final soft vote.
+
+        Args:
+            image: PIL RGB image (already cropped via crop_retina_circle).
+            device: Torch device to run inference on.
+
+        Returns:
+            Averaged softmax probabilities tensor of shape (num_classes,).
+        """
+        all_probs = []
+        for name, sub_model in self.models.items():
+            t = self.transforms[name]
+            tensor = t(image).unsqueeze(0).to(device)
+            logits = sub_model(tensor)
+            probs = F.softmax(logits, dim=-1)[0]
+            all_probs.append(probs)
+
+        # Soft voting: average probabilities across all sub-models
+        stacked = torch.stack(all_probs, dim=0)
+        return stacked.mean(dim=0)
 
 
-def _find_retfound_checkpoint(model_id: str) -> str | None:
+# ═══════════════════════════════════════════════════════════════════════════════
+# CHECKPOINT DISCOVERY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _find_pth_checkpoint(model_id: str) -> str | None:
     """Find a .pth checkpoint if model_id points to one or contains one."""
-    if os.path.isfile(model_id) and model_id.endswith('.pth'):
-        return model_id
-    if os.path.isdir(model_id):
-        candidate = os.path.join(model_id, 'retfound_classifier.pth')
-        if os.path.isfile(candidate):
-            return candidate
+    candidates = [model_id]
+    if not os.path.isabs(model_id):
+        candidates.append(os.path.join(Config.BASE_DIR, model_id))
+
+    for path in candidates:
+        if os.path.isfile(path) and path.endswith('.pth'):
+            return os.path.abspath(path)
+        if os.path.isdir(path):
+            # Check for ensemble checkpoint first, then legacy single-model
+            for fname in ('ensemble_classifier.pth',):
+                candidate = os.path.join(path, fname)
+                if os.path.isfile(candidate):
+                    return os.path.abspath(candidate)
     return None
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FUNDUS IMAGE HEURISTIC
+# ═══════════════════════════════════════════════════════════════════════════════
 
 #: Fundus images always have a very dark circular border (vignetting from the fundus camera lens).
 #: External eye photos have skin-tone pixels all the way to the edges — dark_border will be near 0.
@@ -109,7 +158,7 @@ def is_fundus_image(image_bytes: bytes) -> bool:
       - Bright central region (illuminated retina) vs uniform background.
 
     This is a fast CPU-only check (~1 ms on a 224×224 image) that runs before
-    the heavy ViT forward pass to reject obviously wrong image types.
+    the heavy model forward pass to reject obviously wrong image types.
 
     Args:
         image_bytes: Raw bytes of the uploaded image.
@@ -170,9 +219,9 @@ def is_fundus_image(image_bytes: bytes) -> bool:
 
 def crop_retina_circle(image: Image.Image, tol: int = 15) -> Image.Image:
     """Crop out the black camera frame to isolate the retina ROI.
-    
+
     Ensures input image resolution matches the ROI cropping used during
-    the 92.77% fine-tuning of the RETFound classifier.
+    the 95.42% fine-tuning of the ensemble classifier.
     """
     img_np = np.array(image)
     if img_np.ndim != 3 or img_np.shape[2] < 3:
@@ -200,13 +249,85 @@ def crop_retina_circle(image: Image.Image, tol: int = 15) -> Image.Image:
     return Image.fromarray(img_np[y1:y2, x1:x2])
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODEL LOADING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _load_ensemble_checkpoint(pth_path: str, device: torch.device) -> None:
+    """Load a multi-model ensemble checkpoint (.pth) saved by kaggle_ensemble_training.py.
+
+    The checkpoint contains a 'models' dict mapping model names to their
+    state_dict, timm_name, and img_size. Each sub-model is reconstructed
+    via timm.create_model() and loaded into an EnsembleClassifier wrapper.
+    """
+    global _processor, _model, _id2label
+
+    logger.info("Loading ensemble classifier checkpoint: %s", pth_path)
+    ckpt = torch.load(pth_path, map_location='cpu', weights_only=False)
+
+    num_classes = ckpt.get('num_classes', 4)
+
+    # Read label mapping
+    raw_id2label = ckpt.get('id2label') or {
+        str(i): c for i, c in enumerate(ckpt.get('classes', []))
+    }
+    _id2label = {int(k): v for k, v in raw_id2label.items()}
+
+    # Build ensemble
+    ensemble = EnsembleClassifier()
+
+    models_data = ckpt.get('models', {})
+    if not models_data:
+        raise RuntimeError(
+            "Checkpoint does not contain 'models' key — "
+            "is this an ensemble checkpoint from kaggle_ensemble_training.py?"
+        )
+
+    for model_name, model_data in models_data.items():
+        timm_name = model_data['timm_name']
+        img_size = model_data.get('img_size', 224)
+        state_dict = model_data['model_state_dict']
+
+        sub_model = timm.create_model(
+            timm_name,
+            pretrained=False,
+            num_classes=num_classes,
+        )
+        sub_model.load_state_dict(state_dict)
+        sub_model.eval()
+
+        ensemble.add_model(model_name, sub_model, img_size)
+        logger.info(
+            "  Loaded sub-model: %s (timm=%s, img=%d×%d, params=%s)",
+            model_name, timm_name, img_size, img_size,
+            f"{sum(p.numel() for p in sub_model.parameters()):,}",
+        )
+
+    ensemble.to(device)
+    ensemble.eval()
+
+    # Attach a mock config so inspection tools and tests see id2label
+    ensemble.config = SimpleNamespace(id2label=_id2label)
+
+    _model = ensemble
+    # _processor is None for ensemble — predict() handles it via predict_ensemble()
+    _processor = 'ensemble'
+
+    ens_acc = ckpt.get('ensemble_accuracy', 0)
+    ens_f1 = ckpt.get('ensemble_f1', 0)
+    if ens_acc:
+        logger.info(
+            "  Ensemble checkpoint metrics: Acc=%.2f%% F1=%.2f%%",
+            ens_acc * 100, ens_f1 * 100,
+        )
+
 
 def load_model() -> None:
     """Initialise the image processor and the classification model.
 
-    Supports both:
-      1. Local RETFound PyTorch checkpoints (``retfound_classifier.pth``) with
-         ViT-Large backbone and custom classification head.
+    Supports:
+      1. Local ensemble checkpoints (``ensemble_classifier.pth``) with
+         multiple timm sub-models and soft-voting inference.
       2. HuggingFace Hub or local ``AutoModelForImageClassification`` models.
 
     Args:
@@ -228,35 +349,11 @@ def load_model() -> None:
     device = torch.device(Config.TORCH_DEVICE)
     logger.info("Loading AI model: %s (device=%s)", Config.LOCAL_MODEL_ID, Config.TORCH_DEVICE)
 
-    pth_path = _find_retfound_checkpoint(Config.LOCAL_MODEL_ID)
+    pth_path = _find_pth_checkpoint(Config.LOCAL_MODEL_ID)
 
     try:
         if pth_path:
-            logger.info("Loading RETFound ViT-Large PyTorch checkpoint: %s", pth_path)
-            ckpt = torch.load(pth_path, map_location='cpu')
-            num_classes = ckpt.get('num_classes', 4)
-
-            backbone = timm.create_model(
-                'vit_large_patch16_224',
-                pretrained=False,
-                num_classes=0,
-                global_pool='',
-            )
-            ret_model = RETFoundClassifier(backbone, num_classes=num_classes)
-            ret_model.load_state_dict(ckpt['model_state_dict'])
-            ret_model.to(device)
-            ret_model.eval()
-
-            raw_id2label = ckpt.get('id2label') or {
-                str(i): c for i, c in enumerate(ckpt.get('classes', []))
-            }
-            _id2label = {int(k): v for k, v in raw_id2label.items()}
-
-            # Attach a mock config so inspection tools and tests see id2label
-            ret_model.config = SimpleNamespace(id2label=_id2label)
-
-            _model = ret_model
-            _processor = _RETFOUND_TRANSFORM
+            _load_ensemble_checkpoint(pth_path, device)
         else:
             _processor = AutoImageProcessor.from_pretrained(Config.LOCAL_MODEL_ID)
             _model = AutoModelForImageClassification.from_pretrained(Config.LOCAL_MODEL_ID)
@@ -301,9 +398,9 @@ def predict(image_bytes: bytes) -> list[dict]:
 
     Pipeline:
         bytes -> io.BytesIO -> PIL.Image.open().convert('RGB')
-              -> Image Processor / Normalisation
-              -> torch.Tensor -> model(tensor) inside torch.no_grad()
-              -> torch.softmax(logits, dim=-1)
+              -> crop_retina_circle()
+              -> Ensemble soft-vote across all sub-models (each at its own resolution)
+              -> Averaged softmax probabilities
               -> list of {label, confidence, low_confidence?} sorted by confidence descending
 
     No bytes ever touch the filesystem.
@@ -330,18 +427,24 @@ def predict(image_bytes: bytes) -> list[dict]:
 
     device = torch.device(Config.TORCH_DEVICE)
     with torch.no_grad():
-        if isinstance(_processor, transforms.Compose):
+        if isinstance(_model, EnsembleClassifier):
+            # Ensemble path: each sub-model handles its own resolution
+            probs = _model.predict_ensemble(image, device)
+        elif isinstance(_processor, transforms.Compose):
+            # Legacy single-model .pth path
             tensor = _processor(image).unsqueeze(0).to(device)
             outputs = _model(tensor)
             logits = outputs.logits if hasattr(outputs, 'logits') else outputs
+            probs = torch.softmax(logits, dim=_LOGITS_AXIS)[0]
         else:
+            # HuggingFace AutoModel path
             inputs = _processor(images=image, return_tensors='pt')
             if hasattr(inputs, 'to'):
                 inputs = inputs.to(device)
             outputs = _model(**inputs)
             logits = outputs.logits if hasattr(outputs, 'logits') else outputs
+            probs = torch.softmax(logits, dim=_LOGITS_AXIS)[0]
 
-    probs = torch.softmax(logits, dim=_LOGITS_AXIS)[0]
     id2label = getattr(getattr(_model, 'config', None), 'id2label', None) or _id2label
 
     sorted_predictions = sorted(
@@ -356,7 +459,7 @@ def predict(image_bytes: bytes) -> list[dict]:
         reverse=True,
     )
 
-    # Fix D: Tag the result set with a low_confidence flag when the model is not
+    # Tag the result set with a low_confidence flag when the model is not
     # confident enough — typically caused by an out-of-distribution input image
     # (e.g., an external eye photo instead of a retinal fundus photograph).
     _INCONCLUSIVE_THRESHOLD = 30.0

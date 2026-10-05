@@ -1,9 +1,7 @@
 """
 app.py — Root Entrypoint for Hugging Face Gradio Space (ZeroGPU & CPU Compatible)
 ────────────────────────────────────────────────────────────────────────────────
-Mounts the VisionAI Flask REST API onto FastAPI / Starlette
-so all /api/v1 endpoints are served live for Vercel.
-Also displays an interactive Gradio UI for direct testing.
+Serves the VisionAI REST API for Vercel and an interactive Gradio UI.
 """
 
 import os
@@ -38,6 +36,8 @@ except ImportError:
     spaces = _MockSpaces()
 
 from starlette.middleware.wsgi import WSGIMiddleware
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 
@@ -45,7 +45,31 @@ import gradio as gr
 from app import app as flask_app
 import model
 
-# 1. Interactive Gradio UI for direct testing & Hugging Face healthcheck
+# 1. Main FastAPI Application
+server = FastAPI(title="VisionAI Screening API")
+
+server.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@server.get("/api/health")
+def health_check():
+    """Direct health endpoint for monitoring and orchestrators."""
+    return JSONResponse({
+        "status": "healthy",
+        "service": "VisionAI Retinal Screening API",
+        "model_loaded": model.is_loaded(),
+        "classes": model.get_labels(),
+    })
+
+# Mount Flask app for /api/predict and all remaining backend routes
+server.mount("/api", WSGIMiddleware(flask_app))
+
+# 2. Interactive Gradio UI for direct testing & Hugging Face healthcheck
 @spaces.GPU
 def predict_gradio(img):
     if img is None:
@@ -72,7 +96,7 @@ with gr.Blocks(title="VisionAI — Retinal Screening Platform") as demo:
         "**Multi-condition Deep Learning Ensemble** (EfficientNetB3 + DenseNet121 + InceptionResNetV2) | "
         "**95.42% Clinical Accuracy**"
     )
-    gr.Markdown("🚀 **REST API Status:** `ONLINE` — Endpoints live at `/api/v1/predict` and `/api/v1/health`")
+    gr.Markdown("🚀 **REST API Status:** `ONLINE` — Endpoints live at `/api/predict` and `/api/health`")
 
     with gr.Row():
         with gr.Column(scale=1):
@@ -83,16 +107,5 @@ with gr.Blocks(title="VisionAI — Retinal Screening Platform") as demo:
 
     analyze_btn.click(fn=predict_gradio, inputs=input_img, outputs=output_data)
 
-# 2. Attach CORS and Mount Flask REST API directly onto Gradio's internal FastAPI instance
-demo.app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-demo.app.mount("/api", WSGIMiddleware(flask_app))
-
-if __name__ == "__main__":
-    demo.queue()
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+# Mount Gradio interface onto FastAPI at root
+app = gr.mount_gradio_app(server, demo, path="/")

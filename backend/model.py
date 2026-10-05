@@ -103,8 +103,12 @@ class EnsembleClassifier(nn.Module):
         for name, sub_model in self.models.items():
             t = self.transforms[name]
             tensor = t(image).unsqueeze(0).to(device)
+            # Match sub-model dtype (e.g. bfloat16 for 512MB RAM efficiency)
+            sub_dtype = next(sub_model.parameters()).dtype
+            if sub_dtype != tensor.dtype:
+                tensor = tensor.to(sub_dtype)
             logits = sub_model(tensor)
-            probs = F.softmax(logits, dim=-1)[0]
+            probs = F.softmax(logits.float(), dim=-1)[0]
             all_probs.append(probs)
 
         # Soft voting: average probabilities across all sub-models
@@ -292,14 +296,14 @@ def crop_retina_circle(image: Image.Image, tol: int = 15) -> Image.Image:
 def _load_ensemble_checkpoint(pth_path: str, device: torch.device) -> None:
     """Load a multi-model ensemble checkpoint (.pth) saved by kaggle_ensemble_training.py.
 
-    The checkpoint contains a 'models' dict mapping model names to their
-    state_dict, timm_name, and img_size. Each sub-model is reconstructed
-    via timm.create_model() and loaded into an EnsembleClassifier wrapper.
+    Supports both FP32 and BF16 checkpoints. Uses mmap=True and assign=True
+    to avoid allocating duplicate weight buffers in memory, allowing all
+    three models to fit comfortably within 512MB RAM.
     """
     global _processor, _model, _id2label
 
     logger.info("Loading ensemble classifier checkpoint: %s", pth_path)
-    ckpt = torch.load(pth_path, map_location='cpu', weights_only=False)
+    ckpt = torch.load(pth_path, map_location='cpu', weights_only=False, mmap=True)
 
     num_classes = ckpt.get('num_classes', 4)
 
@@ -322,28 +326,33 @@ def _load_ensemble_checkpoint(pth_path: str, device: torch.device) -> None:
     for model_name, model_data in list(models_data.items()):
         timm_name = model_data['timm_name']
         img_size = model_data.get('img_size', 224)
-        state_dict = model_data.pop('model_state_dict')
+        state_dict = model_data['model_state_dict']
+
+        first_tensor = next(iter(state_dict.values()))
+        target_dtype = first_tensor.dtype if first_tensor.is_floating_point() else torch.float32
 
         sub_model = timm.create_model(
             timm_name,
             pretrained=False,
             num_classes=num_classes,
         )
-        sub_model.load_state_dict(state_dict)
+        if target_dtype != torch.float32:
+            sub_model.to(target_dtype)
+        sub_model.load_state_dict(state_dict, assign=True)
         sub_model.eval()
-        del state_dict
+        del model_data['model_state_dict']
 
         ensemble.add_model(model_name, sub_model, img_size)
         logger.info(
-            "  Loaded sub-model: %s (timm=%s, img=%d×%d, params=%s)",
-            model_name, timm_name, img_size, img_size,
+            "  Loaded sub-model: %s (timm=%s, dtype=%s, img=%d×%d, params=%s)",
+            model_name, timm_name, target_dtype, img_size, img_size,
             f"{sum(p.numel() for p in sub_model.parameters()):,}",
         )
 
     ens_acc = ckpt.get('ensemble_accuracy', 0)
     ens_f1 = ckpt.get('ensemble_f1', 0)
 
-    # Immediately free the 289 MB raw checkpoint dictionary from RAM
+    # Immediately free the checkpoint dictionary from RAM
     del ckpt
     import gc
     gc.collect()

@@ -1,77 +1,95 @@
-# Python
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECRETS & API CREDENTIALS  ⚠️  NEVER COMMIT THESE
+# ═══════════════════════════════════════════════════════════════════════════════
+.env
+.env.*
+!.env.example
+
+# Firebase service account key
+firebase-credentials.json
+**/firebase-credentials.json
+
+# Kaggle API token (contains username + API key)
+kaggle.json
+**/kaggle.json
+
+# HuggingFace access tokens
+.huggingface/
+huggingface_token.txt
+hf_token.txt
+*.hf_token
+
+# Any generic credentials / secrets dump
+*credentials*.json
+*secret*.json
+*secrets*.json
+*service_account*.json
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODEL CHECKPOINTS & CACHE  (large binary files — download at runtime)
+# ═══════════════════════════════════════════════════════════════════════════════
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.bin
+*.h5
+*.pkl
+models/
+backend/models/
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# Flask
-instance/
-.webassets-cache
+# ═══════════════════════════════════════════════════════════════════════════════
+# SCRATCH / TEMPORARY WORKING FILES
+# ═══════════════════════════════════════════════════════════════════════════════
+scratch/
+tmp/
+temp/
 
-# Environment variables
-.env
-.venv
-env/
+# ═══════════════════════════════════════════════════════════════════════════════
+# PERSONAL TEST IMAGES (uploaded during dev/testing)
+# ═══════════════════════════════════════════════════════════════════════════════
+healthy.jpeg
+*.test.jpg
+*.test.png
+HEALTHTY\ EYE.png
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKEND (Python / Flask)
+# ═══════════════════════════════════════════════════════════════════════════════
+.venv/
 venv/
-ENV/
-env.bak/
-venv.bak/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
 
-# IDE
+# ═══════════════════════════════════════════════════════════════════════════════
+# FRONTEND (Next.js / Node)
+# ═══════════════════════════════════════════════════════════════════════════════
+node_modules/
+.next/
+out/
+.vercel/
+*.tsbuildinfo
+.eslintcache
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ARCHIVES & BUILDS
+# ═══════════════════════════════════════════════════════════════════════════════
+build/
+dist/
+*.zip
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# OS & IDE
+# ═══════════════════════════════════════════════════════════════════════════════
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
-# Logs
-*.log
-logs/
-
-# Temporary files
-*.tmp
-*.temp
-
-# Uploads (contains user images)
-uploads/
-
-# Model files
-*.pkl
-*.h5
-*.model
-
-# API keys (should never be committed)
-config.json
-secrets.json
-
-# SQLite database
-*.db
-*.sqlite
-*.sqlite3
-
-# Google Service Account credentials
-credentials.json
+# MODEL CHECKPOINTS & CACHE
+training/

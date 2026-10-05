@@ -1,0 +1,33 @@
+rules_version = '2';
+
+// VisionAI Firestore security rules.
+//
+// The backend uses the Admin SDK, which bypasses these rules entirely — they
+// exist to lock down direct client access. The project was created in Test Mode
+// (allow read, write: if true), which expires and, until it does, lets ANY
+// caller read every document. Deploy these rules to replace it:
+//
+//     firebase deploy --only firestore:rules,firestore:indexes
+//
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // A signed-in user may read their own profile. Writes go through the
+    // backend (POST /api/user/sync) so JWT claims stay the only source of truth.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Scans are readable only by their owner; created only by the backend.
+    match /scans/{scanId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.uid;
+      allow write: if false;
+    }
+
+    // Everything else is denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

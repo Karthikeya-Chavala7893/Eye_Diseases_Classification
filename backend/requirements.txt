@@ -1,0 +1,41 @@
+# VisionAI Backend — Python dependencies
+# Pure JSON REST API. Every entry below is actually imported by the backend.
+# Version bounds: lower (>=) avoids known CVEs, upper (<) blocks breaking changes.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# ── Web framework ─────────────────────────────────────────────────────────────
+Flask>=2.3.0
+Flask-CORS>=4.0.0
+Flask-Limiter>=3.5.0
+
+# ── WSGI utilities (ProxyFix + exceptions only — NOT password hashing) ────────
+Werkzeug>=3.0.0
+
+# ── Firebase (Firestore + Auth JWT verification) ──────────────────────────────
+firebase-admin>=6.0.0
+
+# ── AI inference (Ensemble CNN classifier via timm & HuggingFace) ───────────────
+torch>=2.0.0
+torchvision>=0.15.0
+timm>=0.9.12
+transformers>=4.30.0
+huggingface-hub>=0.19.0
+numpy>=1.24.0
+Pillow>=10.0.0
+
+# ── Runtime utilities ─────────────────────────────────────────────────────────
+python-dotenv>=1.0.0
+
+# ── Production WSGI server ────────────────────────────────────────────────────
+gunicorn>=21.0.0
+
+# ── Testing (CI / local dev only) ─────────────────────────────────────────────
+pytest>=8.0.0
+pytest-flask>=1.3.0
+
+# ── Removed in the v2.0 restructuring ─────────────────────────────────────────
+#   Flask-Login   -> stateless Firebase JWT auth, no server sessions
+#   Flask-WTF     -> CSRF is not applicable to Bearer-token APIs (RFC 6750)
+#   Authlib       -> Firebase Auth handles Google OIDC natively in the browser
+#   Werkzeug password hashing -> Firebase Auth owns credential storage

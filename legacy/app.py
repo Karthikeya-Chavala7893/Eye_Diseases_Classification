@@ -1,0 +1,497 @@
+"""VisionAI Eye Hospital - AI-Powered Retinal Screening Backend"""
+
+import io
+import logging
+import os
+import uuid
+from datetime import datetime
+from dotenv import load_dotenv
+load_dotenv()
+
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask_cors import CORS
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.exceptions import RequestEntityTooLarge
+
+import torch
+from transformers import AutoImageProcessor, AutoModelForImageClassification
+from PIL import Image
+
+from authlib.integrations.flask_client import OAuth
+from authlib.integrations.base_client.errors import OAuthError
+import firebase_admin
+from firebase_admin import credentials as fb_credentials, firestore
+
+# --- Configuration ---
+
+class Config:
+    SECRET_KEY = os.environ.get('SECRET_KEY', '')
+    LOCAL_MODEL_ID = 'NeuronZero/EyeDiseaseClassifier'
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'webp'}
+    GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+    GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+
+    FIREBASE_CREDENTIALS_PATH = os.environ.get('FIREBASE_CREDENTIALS_PATH', 'firebase-credentials.json')
+    FIREBASE_STORAGE_BUCKET = os.environ.get('FIREBASE_STORAGE_BUCKET', '')
+
+    SESSION_COOKIE_SAMESITE = 'Lax'
+
+    PREFERRED_URL_SCHEME = os.environ.get('PREFERRED_URL_SCHEME', 'https')
+
+    ALLOWED_ORIGINS = [
+        origin.strip()
+        for origin in os.environ.get(
+            'ALLOWED_ORIGINS', 'http://localhost:5000,http://127.0.0.1:5000'
+        ).split(',')
+        if origin.strip()
+    ]
+
+# --- Environment Validation ---
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger("visionai")
+
+def validate_config(config_obj):
+    """Validate that all mandatory configuration variables are present and non-empty.
+
+    Raises RuntimeError with a descriptive message listing all missing variables
+    if any required configuration is absent or whitespace-only.
+    Optional OAuth variables trigger a warning but allow startup to continue.
+
+    Args:
+        config_obj: The Config class or object to validate.
+    """
+    required_keys = ['SECRET_KEY', 'FIREBASE_CREDENTIALS_PATH']
+    optional_keys = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET']
+    errors = []
+
+    for key in required_keys:
+        value = getattr(config_obj, key, None)
+        if not value or not str(value).strip():
+            errors.append(f"  - {key} is missing or empty. Set it in your .env file or environment.")
+
+    # Enforce minimum entropy for SECRET_KEY (at least 128-bit / 16-character random string)
+    secret_key = getattr(config_obj, 'SECRET_KEY', '') or ''
+    if secret_key.strip() and len(secret_key.strip()) < 16:
+        errors.append(
+            "  - SECRET_KEY is too short (must be at least 16 characters). "
+            "Use a high-entropy random string for secure session signing."
+        )
+
+    for key in optional_keys:
+        value = getattr(config_obj, key, None)
+        if not value or not str(value).strip():
+            logger.warning("Optional config '%s' is not set. Related features (e.g., Google OAuth) will be disabled.", key)
+
+    if errors:
+        raise RuntimeError(
+            "Critical Configuration Error — the following required environment "
+            "variables are missing or empty:\n" + "\n".join(errors) + "\n\n"
+            "Hint: Copy .env.example to .env and fill in all required values."
+        )
+
+    logger.info("Environment configuration validated successfully.")
+
+# --- App Initialization ---
+
+app = Flask(__name__)
+app.config.from_object(Config)
+
+# Trust reverse proxy headers (X-Forwarded-For, X-Forwarded-Proto, etc.)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+
+CORS(app, resources={r"/*": {"origins": Config.ALLOWED_ORIGINS}}, supports_credentials=True)
+csrf = CSRFProtect(app)
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"
+)
+
+# Validate configuration before any dependent initialisation
+validate_config(Config)
+
+# --- Security Response Headers ---
+
+@app.after_request
+def apply_security_headers(response):
+    """Inject OWASP-recommended HTTP security headers on every response.
+
+    CSP whitelist:
+      - script-src: 'self' + cdnjs (jsPDF SRI-pinned) + 'unsafe-inline' for Jinja2 inline blocks
+      - style-src:  'self' + 'unsafe-inline' + Google Fonts
+      - font-src:   'self' + Google Fonts CDN
+      - img-src:    'self' + data: (base64 previews) + blob: (canvas exports)
+    """
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self';"
+    )
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+
+
+
+# Allow HTTP OAuth redirects in development only (production requires HTTPS)
+if app.debug or os.environ.get('FLASK_ENV') == 'development':
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+else:
+    os.environ.pop('OAUTHLIB_INSECURE_TRANSPORT', None)
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'Please log in to access eye screening features.'
+login_manager.login_message_category = 'info'
+
+@login_manager.unauthorized_handler
+def unauthorized_callback():
+    if request.headers.get('Accept', '').find('application/json') != -1 or \
+       request.content_type == 'multipart/form-data' or request.is_json:
+        return jsonify({'success': False, 'error': 'Authentication required. Please login.'}), 401
+    return redirect(url_for('login'))
+
+oauth = OAuth(app)
+google = oauth.register(
+    name='google', client_id=Config.GOOGLE_CLIENT_ID, client_secret=Config.GOOGLE_CLIENT_SECRET,
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'}
+) if Config.GOOGLE_CLIENT_ID else None
+
+
+
+# --- Firebase Initialization ---
+_fb_cred_path = os.path.join(os.path.dirname(__file__), Config.FIREBASE_CREDENTIALS_PATH)
+_fb_cred = fb_credentials.Certificate(_fb_cred_path)
+firebase_admin.initialize_app(_fb_cred, {
+    'storageBucket': Config.FIREBASE_STORAGE_BUCKET
+})
+db = firestore.client()
+logger.info("Firebase Admin SDK initialized. Project: %s", _fb_cred.project_id)
+
+# --- AI Model ---
+
+logger.info("Loading AI model: %s", Config.LOCAL_MODEL_ID)
+try:
+    image_processor = AutoImageProcessor.from_pretrained(Config.LOCAL_MODEL_ID)
+    eye_model = AutoModelForImageClassification.from_pretrained(Config.LOCAL_MODEL_ID)
+    eye_model.eval()
+    MODEL_LOADED = True
+    logger.info("AI model loaded successfully. Classes: %s", list(eye_model.config.id2label.values()))
+except Exception as e:
+    logger.error("Failed to load AI model: %s", e, exc_info=True)
+    image_processor = eye_model = None
+    MODEL_LOADED = False
+
+# --- User Model & Database ---
+
+class User(UserMixin):
+    def __init__(self, id, email, name, phone=None, password_hash=None, login_method='password',
+                 role='patient', active=True, last_login=None, created_at=None):
+        self.id, self.email, self.name, self.phone = id, email, name, phone
+        self.password_hash, self.login_method, self.role = password_hash, login_method, role
+        self._active = active
+        self.last_login = last_login or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self.created_at = created_at or datetime.now()
+
+    @property
+    def is_active(self):
+        return self._active
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password) if self.password_hash else False
+
+def _row_to_user(row):
+    """Convert a Firestore document dict to a User object."""
+    return User(
+        id=row['id'], email=row['email'], name=row['name'], phone=row.get('phone'),
+        password_hash=row.get('password_hash'), login_method=row.get('login_method', 'password'),
+        role=row.get('role', 'patient'), active=row.get('is_active', True),
+        last_login=row.get('last_login'), created_at=row.get('created_at')
+    )
+
+def save_user_to_db(user):
+    """Insert a new user record into Firestore.
+
+    Uses .set() with the user's UUID as the document ID to prevent silent
+    overwrites — raises an error if Firestore cannot confirm the write.
+
+    Returns:
+        True on success.
+
+    Raises:
+        Exception: Re-raises the database error after logging so callers
+            can react (e.g. return an HTTP error response).
+    """
+    try:
+        user_data = {
+            'id': user.id, 'email': user.email, 'name': user.name, 'phone': user.phone,
+            'password_hash': user.password_hash, 'login_method': user.login_method,
+            'role': user.role, 'is_active': user.is_active, 'last_login': user.last_login,
+            'created_at': user.created_at.strftime('%Y-%m-%d %H:%M:%S') if isinstance(user.created_at, datetime) else user.created_at
+        }
+        db.collection('users').document(user.id).set(user_data)
+        logger.info("User saved to Firestore: %s", user.email)
+        return True
+    except Exception as e:
+        logger.error("FIRESTORE INSERT FAILED for %s: %s", user.email, e)
+        raise
+
+def get_user_by_id(user_id):
+    """Fetch a user document from Firestore by document ID."""
+    doc = db.collection('users').document(user_id).get()
+    return _row_to_user(doc.to_dict()) if doc.exists else None
+
+def get_user_by_email(email):
+    """Query Firestore for a user document matching the given email."""
+    results = db.collection('users').where('email', '==', email).limit(1).get()
+    return _row_to_user(results[0].to_dict()) if results else None
+
+@login_manager.user_loader
+def load_user(user_id):
+    return get_user_by_id(user_id)
+
+
+# --- Authentication Routes ---
+
+@app.route('/login')
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('screening'))
+    return render_template('login.html')
+
+@app.route('/auth/register', methods=['POST'])
+@limiter.limit("15 per hour")
+def register():
+    data = request.get_json()
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+    name = data.get('name', '').strip()
+
+    if not email or not password or not name:
+        return jsonify({'success': False, 'error': 'All fields are required'}), 400
+    if len(password) < 8:
+        return jsonify({'success': False, 'error': 'Password must be at least 8 characters'}), 400
+    if get_user_by_email(email):
+        return jsonify({'success': False, 'error': 'Email already registered'}), 400
+
+    user = User(id=str(uuid.uuid4()), email=email, name=name,
+                password_hash=generate_password_hash(password), login_method='Password')
+    try:
+        save_user_to_db(user)
+    except Exception:
+        return jsonify({'success': False, 'error': 'Account creation failed due to storage error. Please try again.'}), 500
+    login_user(user)
+    return jsonify({'success': True, 'message': 'Account created successfully',
+                    'user': {'name': user.name, 'email': user.email}})
+
+@app.route('/auth/login', methods=['POST'])
+@limiter.limit("5 per minute")
+def login_post():
+    data = request.get_json()
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+    user = get_user_by_email(email)
+    if not user or not user.check_password(password):
+        return jsonify({'success': False, 'error': 'Invalid email or password'}), 401
+    login_user(user)
+    return jsonify({'success': True, 'message': 'Login successful',
+                    'user': {'name': user.name, 'email': user.email}})
+
+@app.route('/auth/google')
+@limiter.limit("5 per minute")
+def google_login():
+    if not google:
+        flash('Google Sign-In is not configured', 'error')
+        return redirect(url_for('login'))
+    redirect_uri = url_for('google_callback', _external=True, _scheme=Config.PREFERRED_URL_SCHEME)
+    return google.authorize_redirect(redirect_uri)
+
+@app.route('/auth/google/callback')
+def google_callback():
+    if not google:
+        flash('Google Sign-In is not configured', 'error')
+        return redirect(url_for('login'))
+    try:
+        token = google.authorize_access_token()
+        user_info = token.get('userinfo') or google.get('https://www.googleapis.com/oauth2/v3/userinfo').json()
+        email = user_info.get('email', '').lower()
+        name = user_info.get('name', email.split('@')[0])
+        logger.info("Google OAuth login attempt: %s (%s)", name, email)
+
+        existing_user = get_user_by_email(email)
+        if existing_user:
+            logger.info("Existing Google user authenticated: %s", existing_user.id)
+            login_user(existing_user)
+        else:
+            user_id = str(uuid.uuid4())
+            logger.info("Creating new Google OAuth user: %s", user_id)
+            user = User(id=user_id, email=email, name=name, login_method='Google')
+            try:
+                save_user_to_db(user)
+            except Exception:
+                flash('Failed to save user account. Please try again.', 'error')
+                return redirect(url_for('login'))
+            login_user(user)
+            logger.info("New Google user logged in: %s", user_id)
+
+        return redirect(url_for('screening'))
+    except OAuthError as e:
+        logger.warning("Google OAuth cancelled or failed: %s", e)
+        flash('Google login failed or was cancelled.', 'error')
+        return redirect(url_for('login'))
+    except Exception as e:
+        logger.error("Google OAuth unexpected error: %s", e, exc_info=True)
+        flash('Google Sign-In failed. Please try again.', 'error')
+        return redirect(url_for('login'))
+
+@app.route('/auth/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('home'))
+
+@app.route('/auth/status')
+def auth_status():
+    if current_user.is_authenticated:
+        return jsonify({'authenticated': True, 'user': {
+            'name': current_user.name, 'email': current_user.email,
+            'login_method': current_user.login_method}})
+    return jsonify({'authenticated': False})
+
+# --- Main Routes ---
+
+@app.route('/')
+def home():
+    return render_template('index.html', user=current_user if current_user.is_authenticated else None)
+
+@app.route('/screening')
+@login_required
+def screening():
+    return render_template('screening.html', user=current_user)
+
+@app.route('/predict', methods=['POST'])
+@login_required
+@limiter.limit("10 per minute")
+def predict():
+    if not MODEL_LOADED:
+        return jsonify({'success': False, 'error': 'AI model is not loaded. Please restart the server.'}), 503
+    if 'image' not in request.files:
+        return jsonify({'success': False, 'error': 'No image uploaded'}), 400
+
+    file = request.files['image']
+    if not file or not file.filename:
+        return jsonify({'success': False, 'error': 'Empty file'}), 400
+
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext not in Config.ALLOWED_EXTENSIONS:
+        return jsonify({'success': False, 'error': f'Invalid format. Use: {", ".join(Config.ALLOWED_EXTENSIONS)}'}), 400
+
+    try:
+        # Process image entirely in memory — no disk I/O, no file collisions
+        image_bytes = file.read()
+        image_stream = io.BytesIO(image_bytes)
+        image = Image.open(image_stream).convert('RGB')
+
+        inputs = image_processor(images=image, return_tensors='pt')
+        with torch.no_grad():
+            outputs = eye_model(**inputs)
+
+        probs = torch.softmax(outputs.logits, dim=-1)[0]
+        predictions = sorted(
+            [{'label': eye_model.config.id2label.get(i, f'Class {i}'),
+              'confidence': round(probs[i].item() * 100, 2)} for i in range(len(probs))],
+            key=lambda x: x['confidence'], reverse=True
+        )
+
+        logger.info("Prediction result for %s: %s (%.2f%%)",
+                    current_user.email, predictions[0]['label'], predictions[0]['confidence'])
+        return jsonify({'success': True, 'predictions': predictions,
+                        'model': Config.LOCAL_MODEL_ID, 'inference': 'local', 'user': current_user.name})
+    except (Image.UnidentifiedImageError, Image.DecompressionBombError, OSError) as e:
+        logger.warning("Invalid image upload from %s: %s", current_user.email, e)
+        return jsonify({'success': False, 'error': 'Invalid or corrupted image format. Please upload a valid JPEG/PNG image.'}), 400
+    except Exception:
+        logger.exception("Prediction inference error for user %s", current_user.email)
+        return jsonify({'success': False, 'error': 'An error occurred while processing the image. Please try again.'}), 500
+
+@app.route('/health')
+@limiter.exempt
+def health():
+    return jsonify({'status': 'healthy', 'model': Config.LOCAL_MODEL_ID,
+                    'model_loaded': MODEL_LOADED, 'inference': 'local',
+                    'google_oauth_configured': bool(Config.GOOGLE_CLIENT_ID)})
+
+@app.route('/config')
+@limiter.exempt
+def get_config():
+    return jsonify({'model': Config.LOCAL_MODEL_ID, 'inference': 'local', 'model_loaded': MODEL_LOADED,
+                    'maxFileSize': Config.MAX_CONTENT_LENGTH, 'allowedFormats': list(Config.ALLOWED_EXTENSIONS),
+                    'googleOAuthEnabled': bool(Config.GOOGLE_CLIENT_ID)})
+
+# --- Error Handlers ---
+
+@app.errorhandler(401)
+def unauthorized(e):
+    if request.is_json or request.path.startswith('/api'):
+        return jsonify({'success': False, 'error': 'Authentication required'}), 401
+    return redirect(url_for('login'))
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({'success': False, 'error': 'Not found'}), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify({'success': False, 'error': f'Rate limit exceeded. {e.description}'}), 429
+
+@app.errorhandler(413)
+@app.errorhandler(RequestEntityTooLarge)
+def handle_payload_too_large(e):
+    """RFC 7807 Problem Details response for uploads exceeding MAX_CONTENT_LENGTH.
+
+    Werkzeug raises RequestEntityTooLarge before the request body is fully read,
+    so the WSGI server terminates the stream early — no memory is wasted buffering
+    the oversized payload.
+    """
+    max_mb = Config.MAX_CONTENT_LENGTH // (1024 * 1024)
+    logger.warning("Upload rejected — payload too large (limit: %dMB) path=%s", max_mb, request.path)
+    return jsonify({
+        'type': 'https://visionai.org/errors/payload-too-large',
+        'title': 'Payload Too Large',
+        'status': 413,
+        'detail': f'Uploaded file exceeds the maximum allowed size of {max_mb}MB.',
+        'instance': request.path,
+        'success': False,
+        'error': f'File size exceeds maximum limit of {max_mb}MB. Please select a smaller image.'
+    }), 413
+
+# --- Run ---
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)

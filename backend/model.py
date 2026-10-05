@@ -331,16 +331,19 @@ def _load_ensemble_checkpoint(pth_path: str, device: torch.device) -> None:
         first_tensor = next(iter(state_dict.values()))
         target_dtype = first_tensor.dtype if first_tensor.is_floating_point() else torch.float32
 
-        sub_model = timm.create_model(
-            timm_name,
-            pretrained=False,
-            num_classes=num_classes,
-        )
-        if target_dtype != torch.float32:
-            sub_model.to(target_dtype)
+        # Instantiate skeleton on 'meta' device so 0 bytes of uninitialized float32
+        # weights are allocated in heap memory.
+        with torch.device('meta'):
+            sub_model = timm.create_model(
+                timm_name,
+                pretrained=False,
+                num_classes=num_classes,
+            )
         sub_model.load_state_dict(state_dict, assign=True)
         sub_model.eval()
         del model_data['model_state_dict']
+        import gc
+        gc.collect()
 
         ensemble.add_model(model_name, sub_model, img_size)
         logger.info(

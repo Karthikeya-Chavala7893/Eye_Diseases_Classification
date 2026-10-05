@@ -159,11 +159,17 @@ def init_services() -> None:
     except RuntimeError:
         logger.error("AI model unavailable — /api/predict will return 503.")
 
-    try:
-        home_model.load_home_model()
-    except RuntimeError:
-        logger.warning(
-            "Home screening model unavailable — home mode will use pixel cues only."
+    if Config.USE_HOME_AI_MODEL:
+        try:
+            home_model.load_home_model()
+        except RuntimeError:
+            logger.warning(
+                "Home screening model unavailable — home mode will use pixel cues only."
+            )
+    else:
+        logger.info(
+            "Home AI model disabled (USE_HOME_AI_MODEL=false) — "
+            "running lightweight optical & symptom triage engine (0 MB RAM)."
         )
 
 

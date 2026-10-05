@@ -319,10 +319,10 @@ def _load_ensemble_checkpoint(pth_path: str, device: torch.device) -> None:
             "is this an ensemble checkpoint from kaggle_ensemble_training.py?"
         )
 
-    for model_name, model_data in models_data.items():
+    for model_name, model_data in list(models_data.items()):
         timm_name = model_data['timm_name']
         img_size = model_data.get('img_size', 224)
-        state_dict = model_data['model_state_dict']
+        state_dict = model_data.pop('model_state_dict')
 
         sub_model = timm.create_model(
             timm_name,
@@ -331,6 +331,7 @@ def _load_ensemble_checkpoint(pth_path: str, device: torch.device) -> None:
         )
         sub_model.load_state_dict(state_dict)
         sub_model.eval()
+        del state_dict
 
         ensemble.add_model(model_name, sub_model, img_size)
         logger.info(
@@ -338,6 +339,14 @@ def _load_ensemble_checkpoint(pth_path: str, device: torch.device) -> None:
             model_name, timm_name, img_size, img_size,
             f"{sum(p.numel() for p in sub_model.parameters()):,}",
         )
+
+    ens_acc = ckpt.get('ensemble_accuracy', 0)
+    ens_f1 = ckpt.get('ensemble_f1', 0)
+
+    # Immediately free the 289 MB raw checkpoint dictionary from RAM
+    del ckpt
+    import gc
+    gc.collect()
 
     ensemble.to(device)
     ensemble.eval()
@@ -349,8 +358,6 @@ def _load_ensemble_checkpoint(pth_path: str, device: torch.device) -> None:
     # _processor is None for ensemble — predict() handles it via predict_ensemble()
     _processor = 'ensemble'
 
-    ens_acc = ckpt.get('ensemble_accuracy', 0)
-    ens_f1 = ckpt.get('ensemble_f1', 0)
     if ens_acc:
         logger.info(
             "  Ensemble checkpoint metrics: Acc=%.2f%% F1=%.2f%%",

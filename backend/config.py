@@ -94,7 +94,7 @@ class Config:
     # ── Home screening model ─────────────────────────────────────────────────
     #: Option 1: Use calibrated optical computer vision engine (default, 0 MB, fastest).
     #: When true, optionally queries the secondary ML classifier.
-    USE_HOME_AI_MODEL = os.environ.get('USE_HOME_AI_MODEL', 'true').lower() == 'true'
+    USE_HOME_AI_MODEL = os.environ.get('USE_HOME_AI_MODEL', 'false').lower() == 'true'
 
     #: HuggingFace model id for the Daily Home Mode image classifier.
     #: Separate from LOCAL_MODEL_ID so the clinical and home pipelines can be

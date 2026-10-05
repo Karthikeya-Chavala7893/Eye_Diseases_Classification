@@ -12,6 +12,7 @@ import { Inter, Plus_Jakarta_Sans } from 'next/font/google';
 
 import { AuthProvider } from '@/context/AuthContext';
 import { ChatBot } from '@/components/ChatBot';
+import { KeepAlive } from '@/components/KeepAlive';
 
 import './globals.css';
 
@@ -70,6 +71,7 @@ export default function RootLayout({
         <AuthProvider>
           {children}
           <ChatBot />
+          <KeepAlive />
         </AuthProvider>
       </body>
     </html>

@@ -40,14 +40,26 @@ interface PredictionState {
   previewUrl: string | null;
   result: PredictResponse | null;
   error: string | null;
+  /**
+   * True when the request has been in-flight for more than 10 seconds.
+   * Signals a likely Render cold-start so the UI can show a warming message.
+   */
+  warmingUp: boolean;
 }
 
 type PredictionAction =
   | { type: 'submit'; pending: PendingRequest; previewUrl: string | null }
   | { type: 'predicting' }
+  | { type: 'warming_up' }
   | { type: 'success'; result: PredictResponse }
   | { type: 'error'; error: string }
   | { type: 'reset' };
+
+/** After this many ms with no response, show the "warming up" message. */
+const WARMING_UP_DELAY_MS = 10_000;
+
+/** Hard timeout — if the server hasn't responded in 3 min, surface an error. */
+const REQUEST_TIMEOUT_MS = 3 * 60 * 1000;
 
 const INITIAL_STATE: PredictionState = {
   status: 'idle',
@@ -55,6 +67,7 @@ const INITIAL_STATE: PredictionState = {
   previewUrl: null,
   result: null,
   error: null,
+  warmingUp: false,
 };
 
 function reducer(state: PredictionState, action: PredictionAction): PredictionState {
@@ -66,13 +79,16 @@ function reducer(state: PredictionState, action: PredictionAction): PredictionSt
         previewUrl: action.previewUrl,
         result: null,
         error: null,
+        warmingUp: false,
       };
     case 'predicting':
-      return { ...state, status: 'predicting', error: null };
+      return { ...state, status: 'predicting', error: null, warmingUp: false };
+    case 'warming_up':
+      return { ...state, warmingUp: true };
     case 'success':
-      return { ...state, status: 'success', result: action.result, error: null };
+      return { ...state, status: 'success', result: action.result, error: null, warmingUp: false };
     case 'error':
-      return { ...state, status: 'error', error: action.error };
+      return { ...state, status: 'error', error: action.error, warmingUp: false };
     case 'reset':
       return INITIAL_STATE;
     default:
@@ -93,6 +109,11 @@ export interface UsePredictionResult extends PredictionState {
   retry: () => Promise<void>;
   /** Clear everything and return to the upload prompt. */
   reset: () => void;
+  /**
+   * True when the server is taking longer than expected (Render cold start).
+   * The UI should show a friendly "AI is warming up" message.
+   */
+  warmingUp: boolean;
 }
 
 /**
@@ -132,6 +153,18 @@ export function usePrediction(): UsePredictionResult {
       abortRef.current = controller;
 
       dispatch({ type: 'predicting' });
+
+      // Show a "warming up" hint after WARMING_UP_DELAY_MS with no response.
+      // This happens on Render free-tier cold starts (container was asleep).
+      const warmingTimer = setTimeout(() => {
+        dispatch({ type: 'warming_up' });
+      }, WARMING_UP_DELAY_MS);
+
+      // Hard 3-minute timeout — abort the request if the server never responds.
+      const timeoutTimer = setTimeout(() => {
+        controller.abort();
+      }, REQUEST_TIMEOUT_MS);
+
       try {
         const result =
           pending.mode === 'clinical'
@@ -139,18 +172,35 @@ export function usePrediction(): UsePredictionResult {
             : await screenHome(user, pending.symptoms, pending.file, controller.signal);
         dispatch({ type: 'success', result });
       } catch (cause) {
-        if (cause instanceof DOMException && cause.name === 'AbortError') return;
+        if (cause instanceof DOMException && cause.name === 'AbortError') {
+          // Could be user-initiated abort OR our timeout abort.
+          // Only surface an error if our timeout fired (controller was already aborted).
+          if (controller.signal.aborted) {
+            dispatch({
+              type: 'error',
+              error:
+                'The AI server is still warming up. Please wait 1-2 minutes and try again — ' +
+                'the server needs time to load the model after a period of inactivity.',
+            });
+          }
+          return;
+        }
         if (cause instanceof ApiError) {
           const message =
             cause.status === 401
               ? 'Your session expired. Please sign in again.'
               : cause.status === 429
                 ? 'Too many screenings in a short time. Please wait a minute and try again.'
-                : cause.message;
+                : cause.status === 503
+                  ? 'The AI model is still loading. Please wait 30 seconds and try again.'
+                  : cause.message;
           dispatch({ type: 'error', error: message });
           return;
         }
         dispatch({ type: 'error', error: 'Analysis failed. Please try again.' });
+      } finally {
+        clearTimeout(warmingTimer);
+        clearTimeout(timeoutTimer);
       }
     },
     [user],

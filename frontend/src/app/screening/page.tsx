@@ -85,7 +85,7 @@ function darken(hex: string, pct: number): string {
 export default function ScreeningPage(): JSX.Element {
   const router = useRouter();
   const { user, loading } = useAuth();
-  const { status, previewUrl, result, error, busy, analyze, assess, retry, reset } =
+  const { status, previewUrl, result, error, busy, warmingUp, analyze, assess, retry, reset } =
     usePrediction();
 
   const [mode, setMode] = useState<ScreeningMode>('home');
@@ -291,6 +291,34 @@ export default function ScreeningPage(): JSX.Element {
                           : 'Matching your symptoms against the home triage guide…')
                       : 'Our AI is examining your retinal image…'}
                   </p>
+                  {warmingUp && !isHome && (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      style={{
+                        marginTop: '1rem',
+                        padding: '0.875rem 1.25rem',
+                        background: 'linear-gradient(135deg, rgba(251,191,36,0.15), rgba(245,158,11,0.08))',
+                        border: '1px solid rgba(251,191,36,0.4)',
+                        borderRadius: '0.75rem',
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '0.75rem',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ fontSize: '1.4rem', lineHeight: 1 }} aria-hidden="true">☕</span>
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '0.25rem', color: 'var(--amber-700, #b45309)' }}>
+                          AI server is warming up…
+                        </p>
+                        <p style={{ fontSize: '0.82rem', opacity: 0.85, lineHeight: 1.55 }}>
+                          The server was idle and is loading the AI model (≈1-2 min).
+                          Please wait — your scan will complete automatically.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   <div className="loading-bar">
                     <div className="loading-progress" />
                   </div>

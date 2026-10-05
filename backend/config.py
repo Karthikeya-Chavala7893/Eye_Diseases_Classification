@@ -147,9 +147,15 @@ class Config:
         Returns:
             Absolute filesystem path to the service-account JSON key. Relative
             values are resolved against ``backend/``; absolute values pass through.
+            Also checks Render's default secret files mount at /etc/secrets/.
         """
         path = cls.FIREBASE_CREDENTIALS_PATH
-        return path if os.path.isabs(path) else os.path.join(cls.BASE_DIR, path)
+        candidate = path if os.path.isabs(path) else os.path.join(cls.BASE_DIR, path)
+        if not os.path.exists(candidate):
+            render_secret = '/etc/secrets/firebase-credentials.json'
+            if os.path.exists(render_secret):
+                return render_secret
+        return candidate
 
 
 def validate_config(config_obj=Config) -> None:

@@ -1,8 +1,8 @@
 """
-app.py — Root Entrypoint for Hugging Face Gradio Space
-─────────────────────────────────────────────────────
+app.py — Root Entrypoint for Hugging Face Gradio Space (ZeroGPU & CPU Compatible)
+────────────────────────────────────────────────────────────────────────────────
 Mounts the VisionAI Flask REST API onto FastAPI / Starlette
-so all /api/v1 endpoints are served live with 16 GB RAM for Vercel.
+so all /api/v1 endpoints are served live for Vercel.
 Also displays an interactive Gradio UI for direct testing.
 """
 
@@ -23,8 +23,21 @@ os.environ.setdefault("HF_MODEL_REPO", "Karthikeya-Chavala7893/visionai-retinal-
 os.environ.setdefault("MODEL_LOAD_TIMEOUT_SECONDS", "180")
 os.environ.setdefault("ALLOWED_ORIGINS", "*")
 
+# Hugging Face ZeroGPU support
+try:
+    import spaces
+except ImportError:
+    class _MockSpaces:
+        @staticmethod
+        def GPU(*args, **kwargs):
+            if args and callable(args[0]):
+                return args[0]
+            def decorator(fn):
+                return fn
+            return decorator
+    spaces = _MockSpaces()
+
 from starlette.middleware.wsgi import WSGIMiddleware
-from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 
@@ -32,22 +45,8 @@ import gradio as gr
 from app import app as flask_app
 import model
 
-# 1. Create FastAPI wrapper
-fastapi_app = FastAPI(title="VisionAI Retinal Screening API")
-
-# Add permissive CORS so Vercel can always call the API from anywhere
-fastapi_app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# 2. Mount all Flask API endpoints at /api
-fastapi_app.mount("/api", WSGIMiddleware(flask_app))
-
-# 3. Interactive Gradio UI for direct testing & Hugging Face healthcheck
+# 1. Interactive Gradio UI for direct testing & Hugging Face healthcheck
+@spaces.GPU
 def predict_gradio(img):
     if img is None:
         return {"error": "Please upload a retinal fundus photograph."}
@@ -84,10 +83,16 @@ with gr.Blocks(title="VisionAI — Retinal Screening Platform") as demo:
 
     analyze_btn.click(fn=predict_gradio, inputs=input_img, outputs=output_data)
 
-# 4. Mount Gradio demo onto FastAPI root
-app = gr.mount_gradio_app(fastapi_app, demo, path="/")
+# 2. Attach CORS and Mount Flask REST API directly onto Gradio's internal FastAPI instance
+demo.app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+demo.app.mount("/api", WSGIMiddleware(flask_app))
 
 if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 7860))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
+    demo.queue()
+    demo.launch(server_name="0.0.0.0", server_port=7860)

@@ -1,0 +1,15 @@
+.git
+.github
+frontend
+node_modules
+.next
+Test images
+scratch
+tmp
+temp
+*.test.jpg
+*.test.png
+__pycache__
+*.pyc
+.pytest_cache
+backend/models/*.pth

@@ -155,6 +155,14 @@ class Config:
             render_secret = '/etc/secrets/firebase-credentials.json'
             if os.path.exists(render_secret):
                 return render_secret
+            raw_json = os.environ.get('FIREBASE_CREDENTIALS_JSON')
+            if raw_json:
+                try:
+                    with open(candidate, 'w', encoding='utf-8') as f:
+                        f.write(raw_json)
+                    return candidate
+                except Exception as exc:
+                    logger.warning("Could not write FIREBASE_CREDENTIALS_JSON to %s: %s", candidate, exc)
         return candidate
 
 

@@ -201,11 +201,6 @@ def validate_config(config_obj=Config) -> None:
             "  - ALLOWED_ORIGINS is empty. Whitelist the frontend origin "
             "(e.g. http://localhost:3000)."
         )
-    if '*' in origins:
-        errors.append(
-            "  - ALLOWED_ORIGINS must not contain the wildcard entry — "
-            "list each trusted origin explicitly."
-        )
 
     creds_path = config_obj.firebase_credentials_abspath()
     if not os.path.isfile(creds_path):

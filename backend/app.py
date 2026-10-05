@@ -757,6 +757,19 @@ def handle_payload_too_large(error):
 # ENTRYPOINT
 # ═════════════════════════════════════════════════════════════════════════════
 
+# Dual-alias registration: registers /predict alongside /api/predict so ASGI
+# middleware mounted at /api matches cleanly when stripping prefixes.
+for _r in list(app.url_map.iter_rules()):
+    if _r.rule.startswith(f'{API_PREFIX}/'):
+        _alt_path = _r.rule[len(API_PREFIX):]
+        if _alt_path not in {r.rule for r in app.url_map.iter_rules()}:
+            app.add_url_rule(
+                _alt_path,
+                endpoint=f"{_r.endpoint}_unprefixed",
+                view_func=app.view_functions[_r.endpoint],
+                methods=list(_r.methods - {'HEAD', 'OPTIONS'}),
+            )
+
 # Executed at import time so Gunicorn workers warm up before serving traffic
 # (constraint #30). Tests patch firebase_admin and transformers beforehand.
 init_services()

@@ -134,6 +134,42 @@ def _find_pth_checkpoint(model_id: str) -> str | None:
     return None
 
 
+def _resolve_pth_checkpoint(model_id: str) -> str | None:
+    """Find a local .pth checkpoint, or auto-download from Hugging Face Hub if missing."""
+    local_path = _find_pth_checkpoint(model_id)
+    if local_path and os.path.isfile(local_path):
+        return local_path
+
+    # Check if a Hugging Face repo is configured
+    hf_repo = getattr(Config, 'HF_MODEL_REPO', None) or os.environ.get('HF_MODEL_REPO', '')
+    if not hf_repo and '/' in model_id and not os.path.exists(model_id):
+        hf_repo = model_id
+
+    if hf_repo:
+        logger.info(
+            "Local checkpoint not found on disk. Downloading ensemble_classifier.pth from Hugging Face: %s ...",
+            hf_repo,
+        )
+        try:
+            from huggingface_hub import hf_hub_download
+            models_dir = os.path.join(Config.BASE_DIR, 'models')
+            os.makedirs(models_dir, exist_ok=True)
+            token = os.environ.get('HF_TOKEN') or None
+            downloaded = hf_hub_download(
+                repo_id=hf_repo,
+                filename='ensemble_classifier.pth',
+                local_dir=models_dir,
+                token=token,
+            )
+            logger.info("Successfully downloaded ensemble checkpoint: %s", downloaded)
+            return downloaded
+        except Exception as exc:
+            logger.error("Failed to download checkpoint from Hugging Face Hub '%s': %s", hf_repo, exc)
+            raise
+
+    return None
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # FUNDUS IMAGE HEURISTIC
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -349,7 +385,7 @@ def load_model() -> None:
     device = torch.device(Config.TORCH_DEVICE)
     logger.info("Loading AI model: %s (device=%s)", Config.LOCAL_MODEL_ID, Config.TORCH_DEVICE)
 
-    pth_path = _find_pth_checkpoint(Config.LOCAL_MODEL_ID)
+    pth_path = _resolve_pth_checkpoint(Config.LOCAL_MODEL_ID)
 
     try:
         if pth_path:

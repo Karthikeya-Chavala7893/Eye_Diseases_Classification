@@ -85,10 +85,11 @@ class Config:
     CHECK_TOKEN_REVOKED = os.environ.get('CHECK_TOKEN_REVOKED', 'false').lower() == 'true'
 
     # ── AI inference ─────────────────────────────────────────────────────────
-    LOCAL_MODEL_ID = os.environ.get('LOCAL_MODEL_ID', 'NeuronZero/EyeDiseaseClassifier')
+    LOCAL_MODEL_ID = os.environ.get('LOCAL_MODEL_ID', 'models/ensemble_classifier.pth')
+    HF_MODEL_REPO = os.environ.get('HF_MODEL_REPO', '')
     TORCH_DEVICE = os.environ.get('TORCH_DEVICE', 'cpu')
     #: Cold-start budget for model download + initialisation (constraint #25).
-    MODEL_LOAD_TIMEOUT_SECONDS = int(os.environ.get('MODEL_LOAD_TIMEOUT_SECONDS', '60'))
+    MODEL_LOAD_TIMEOUT_SECONDS = int(os.environ.get('MODEL_LOAD_TIMEOUT_SECONDS', '180'))
 
     # ── Home screening model ─────────────────────────────────────────────────
     #: Option 1: Use calibrated optical computer vision engine (default, 0 MB, fastest).
